@@ -6,26 +6,16 @@
     <title>설계용역 모니터링 - 판매실적 대시보드</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="../assets/css/common.css" rel="stylesheet">
+    <script src="../assets/js/sheets-api.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap');
         body { font-family: 'Noto Sans KR', sans-serif; }
-        .sortable {
-            cursor: pointer;
-            user-select: none;
-        }
-        .sortable:hover {
-            background-color: #f3f4f6;
-        }
-        .sort-icon {
-            display: inline-block;
-            margin-left: 4px;
-            font-size: 10px;
-            color: #9ca3af;
-        }
+        .sortable { cursor: pointer; user-select: none; }
+        .sortable:hover { background-color: #f3f4f6; }
+        .sort-icon { display: inline-block; margin-left: 4px; font-size: 10px; color: #9ca3af; }
     </style>
 </head>
 <body class="bg-gray-50 text-gray-800">
-
     <nav class="bg-white shadow-sm border-b">
         <div class="max-w-7xl mx-auto px-4 py-4">
             <a href="../index.html" class="text-lg font-semibold text-gray-900">← 대시보드로 돌아가기</a>
@@ -38,12 +28,9 @@
             <p class="text-gray-600">설계용역 발주 현황과 적합도를 분석합니다.</p>
         </div>
 
-        <!-- 필터 영역 -->
         <div class="bg-white rounded-lg shadow-md p-6 mb-6">
             <h2 class="text-lg font-bold text-gray-900 mb-4">필터 옵션</h2>
-            
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
-                <!-- 연도 -->
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">연도</label>
                     <select id="filterYear" class="w-full px-4 py-2 border border-gray-300 rounded-lg">
@@ -52,8 +39,6 @@
                         <option value="2026">2026</option>
                     </select>
                 </div>
-
-                <!-- 품목 -->
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">품목</label>
                     <select id="filterProduct" class="w-full px-4 py-2 border border-gray-300 rounded-lg">
@@ -62,24 +47,18 @@
                         <option value="식생매트">식생매트</option>
                     </select>
                 </div>
-
-                <!-- 시도 -->
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">지역 (시/도)</label>
                     <select id="filterProvince" class="w-full px-4 py-2 border border-gray-300 rounded-lg">
                         <option value="">전체</option>
                     </select>
                 </div>
-
-                <!-- 시군구 -->
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">지역 (시/군/구)</label>
                     <select id="filterCity" class="w-full px-4 py-2 border border-gray-300 rounded-lg">
                         <option value="">전체</option>
                     </select>
                 </div>
-
-                <!-- 공공조달분류 -->
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">공공조달분류</label>
                     <select id="filterCategory" class="w-full px-4 py-2 border border-gray-300 rounded-lg">
@@ -91,8 +70,6 @@
                         <option value="국가유산기술용역">국가유산기술용역</option>
                     </select>
                 </div>
-
-                <!-- 사업현황 -->
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">사업현황</label>
                     <select id="filterStatus" class="w-full px-4 py-2 border border-gray-300 rounded-lg">
@@ -101,51 +78,26 @@
                         <option value="">전체</option>
                     </select>
                 </div>
-
-                <!-- 검색 -->
                 <div class="md:col-span-2">
                     <label class="block text-sm font-medium text-gray-700 mb-2">사업명 검색</label>
-                    <input type="text" id="searchKeyword" placeholder="사업명 입력..." 
-                           class="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                           onkeyup="if(event.key==='Enter') applyFilters()">
+                    <input type="text" id="searchKeyword" placeholder="사업명 입력..." class="w-full px-4 py-2 border border-gray-300 rounded-lg" onkeyup="if(event.key==='Enter') applyFilters()">
                 </div>
             </div>
-
             <div class="flex justify-end gap-2">
-                <button onclick="resetFilters()" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300">
-                    초기화
-                </button>
-                <button onclick="applyFilters()" class="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600">
-                    필터 적용
-                </button>
+                <button onclick="resetFilters()" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300">초기화</button>
+                <button onclick="applyFilters()" class="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600">필터 적용</button>
             </div>
         </div>
 
-        <!-- 통계 요약 -->
         <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-            <div class="bg-white rounded-lg shadow-md p-4">
-                <div class="text-sm text-gray-600 mb-1">전체 프로젝트</div>
-                <div class="text-2xl font-bold text-gray-900" id="statTotal">-</div>
-            </div>
-            <div class="bg-white rounded-lg shadow-md p-4">
-                <div class="text-sm text-gray-600 mb-1">보행매트</div>
-                <div class="text-2xl font-bold text-blue-600" id="statWalking">-</div>
-            </div>
-            <div class="bg-white rounded-lg shadow-md p-4">
-                <div class="text-sm text-gray-600 mb-1">식생매트</div>
-                <div class="text-2xl font-bold text-green-600" id="statVegetation">-</div>
-            </div>
-            <div class="bg-white rounded-lg shadow-md p-4">
-                <div class="text-sm text-gray-600 mb-1">평균 적합도</div>
-                <div class="text-2xl font-bold text-orange-500" id="statAvgScore">-</div>
-            </div>
+            <div class="bg-white rounded-lg shadow-md p-4"><div class="text-sm text-gray-600 mb-1">전체 프로젝트</div><div class="text-2xl font-bold text-gray-900" id="statTotal">-</div></div>
+            <div class="bg-white rounded-lg shadow-md p-4"><div class="text-sm text-gray-600 mb-1">보행매트</div><div class="text-2xl font-bold text-blue-600" id="statWalking">-</div></div>
+            <div class="bg-white rounded-lg shadow-md p-4"><div class="text-sm text-gray-600 mb-1">식생매트</div><div class="text-2xl font-bold text-green-600" id="statVegetation">-</div></div>
+            <div class="bg-white rounded-lg shadow-md p-4"><div class="text-sm text-gray-600 mb-1">평균 적합도</div><div class="text-2xl font-bold text-orange-500" id="statAvgScore">-</div></div>
         </div>
 
-        <!-- 수요기관 리스트 테이블 (2단계) -->
         <div id="agencyListContainer" class="bg-white rounded-lg shadow-md overflow-hidden mb-6">
-            <div class="p-4 border-b bg-gray-50">
-                <h2 class="text-lg font-bold text-gray-900">수요기관 목록</h2>
-            </div>
+            <div class="p-4 border-b bg-gray-50"><h2 class="text-lg font-bold text-gray-900">수요기관 목록</h2></div>
             <div class="overflow-x-auto">
                 <table class="w-full">
                     <thead class="bg-gray-100 border-b">
@@ -158,83 +110,38 @@
                             <th class="px-4 py-3 text-right text-sm font-semibold text-gray-700 sortable" onclick="sortAgencyTable('적합도')">평균 적합도<span class="sort-icon">▼</span></th>
                         </tr>
                     </thead>
-                    <tbody id="agencyList">
-                        <tr>
-                            <td colspan="6" class="px-4 py-8 text-center text-gray-500">
-                                데이터를 불러오는 중...
-                            </td>
-                        </tr>
-                    </tbody>
+                    <tbody id="agencyList"><tr><td colspan="6" class="px-4 py-8 text-center text-gray-500">데이터를 불러오는 중...</td></tr></tbody>
                 </table>
             </div>
         </div>
 
-        <!-- 용역 리스트 테이블 (3단계) -->
         <div id="contractTableContainer" class="bg-white rounded-lg shadow-md overflow-hidden" style="display: none;">
             <div class="p-4 border-b bg-gray-50 flex justify-between items-center">
                 <h2 class="text-lg font-bold text-gray-900" id="selectedAgencyTitle">-</h2>
-                <button onclick="backToAgencyList()" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 text-sm">
-                    ← 수요기관 목록으로
-                </button>
+                <button onclick="backToAgencyList()" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 text-sm">← 수요기관 목록으로</button>
             </div>
             <div class="overflow-x-auto">
                 <table class="w-full">
                     <thead class="bg-gray-100 border-b">
                         <tr>
-                            <th class="px-4 py-3 text-left text-sm font-semibold text-gray-700 sortable" onclick="sortTable('착수일자')">
-                                착수일자<span class="sort-icon">▼</span>
-                            </th>
-                            <th class="px-4 py-3 text-left text-sm font-semibold text-gray-700 sortable" onclick="sortTable('잔여기간')">
-                                잔여기간<span class="sort-icon">▼</span>
-                            </th>
-                            <th class="px-4 py-3 text-left text-sm font-semibold text-gray-700 sortable" onclick="sortTable('사업명')">
-                                사업명<span class="sort-icon">▼</span>
-                            </th>
-                            <th class="px-4 py-3 text-left text-sm font-semibold text-gray-700 sortable" onclick="sortTable('계약업체')">
-                                계약업체<span class="sort-icon">▼</span>
-                            </th>
-                            <th class="px-4 py-3 text-right text-sm font-semibold text-gray-700 sortable" onclick="sortTable('계약금액')">
-                                계약금액(천원)<span class="sort-icon">▼</span>
-                            </th>
-                            <th class="px-4 py-3 text-left text-sm font-semibold text-gray-700 sortable" onclick="sortTable('품목')">
-                                품목<span class="sort-icon">▼</span>
-                            </th>
-                            <th class="px-4 py-3 text-center text-sm font-semibold text-gray-700 sortable" onclick="sortTable('적합도')">
-                                적합도<span class="sort-icon">▼</span>
-                            </th>
+                            <th class="px-4 py-3 text-left text-sm font-semibold text-gray-700 sortable" onclick="sortTable('착수일자')">착수일자<span class="sort-icon">▼</span></th>
+                            <th class="px-4 py-3 text-left text-sm font-semibold text-gray-700 sortable" onclick="sortTable('잔여기간')">잔여기간<span class="sort-icon">▼</span></th>
+                            <th class="px-4 py-3 text-left text-sm font-semibold text-gray-700 sortable" onclick="sortTable('사업명')">사업명<span class="sort-icon">▼</span></th>
+                            <th class="px-4 py-3 text-left text-sm font-semibold text-gray-700 sortable" onclick="sortTable('계약업체')">계약업체<span class="sort-icon">▼</span></th>
+                            <th class="px-4 py-3 text-right text-sm font-semibold text-gray-700 sortable" onclick="sortTable('계약금액')">계약금액(천원)<span class="sort-icon">▼</span></th>
+                            <th class="px-4 py-3 text-left text-sm font-semibold text-gray-700 sortable" onclick="sortTable('품목')">품목<span class="sort-icon">▼</span></th>
+                            <th class="px-4 py-3 text-center text-sm font-semibold text-gray-700 sortable" onclick="sortTable('적합도')">적합도<span class="sort-icon">▼</span></th>
                         </tr>
                     </thead>
-                    <tbody id="contractList">
-                        <tr>
-                            <td colspan="7" class="px-4 py-8 text-center text-gray-500">
-                                수요기관을 선택해주세요.
-                            </td>
-                        </tr>
-                    </tbody>
+                    <tbody id="contractList"></tbody>
                 </table>
             </div>
         </div>
-
-        <!-- 페이지네이션 -->
-        <div class="mt-6 flex justify-center">
-            <div id="pagination" class="flex gap-2"></div>
-        </div>
+        <div class="mt-6 flex justify-center"><div id="pagination" class="flex gap-2"></div></div>
     </main>
-
-    <footer class="bg-white border-t mt-12">
-        <div class="max-w-7xl mx-auto px-4 py-6">
-            <p class="text-center text-gray-500 text-sm">
-                © 2025 판매실적 대시보드. All Rights Reserved.
-            </p>
-        </div>
-    </footer>
 
     <script src="../assets/js/common.js"></script>
     <script>
-        // 구글시트 URL
-        const SHEET_URL = 'https://docs.google.com/spreadsheets/d/17j_ep4MJZQ3euscHovWIHK0Nhj8t-PmejbCXF_JlPCI/edit?usp=sharing';
-        const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQEOv1Lt4jAKmc5znjAAKovg2AiL7zWXpBAA9rJULDEJA_kY8eholkBfNMM2SeXkRFHcYEmGkgSuBob/pub?output=csv';
-        
         let allData = [];
         let filteredData = [];
         let agencyFilteredData = [];
@@ -244,7 +151,6 @@
         let sortDirection = 'desc';
         const itemsPerPage = 20;
 
-        // 페이지 로드 시 데이터 가져오기
         document.addEventListener('DOMContentLoaded', async () => {
             await loadData();
             populateFilters();
@@ -252,156 +158,65 @@
             applyFilters();
         });
 
-        // 디폴트 필터 설정
         function setDefaultFilters() {
             document.getElementById('filterProvince').value = '경기도';
             document.getElementById('filterStatus').value = 'ongoing';
             updateCityFilter();
         }
 
-        // 데이터 로드
         async function loadData() {
             try {
-                const response = await fetch(CSV_URL);
-                const csvText = await response.text();
-                allData = parseCSV(csvText);
+                allData = await window.sheetsAPI.loadCSVData('contractMonitoring');
                 console.log('데이터 로드 완료:', allData.length, '건');
             } catch (error) {
                 console.error('데이터 로드 실패:', error);
-                alert('데이터 로드 실패. 구글시트 접근 권한을 확인해주세요.');
+                alert('데이터 로드 실패. API 연결을 확인해주세요.');
             }
         }
 
-        // CSV 파싱 (RFC 4180 표준 지원)
-        function parseCSV(csv) {
-            const lines = [];
-            let currentLine = '';
-            let inQuotes = false;
-            
-            for (let i = 0; i < csv.length; i++) {
-                const char = csv[i];
-                const nextChar = csv[i + 1];
-                
-                if (char === '"' && nextChar === '"') {
-                    currentLine += '"';
-                    i++;
-                } else if (char === '"') {
-                    inQuotes = !inQuotes;
-                } else if (char === '\n' && !inQuotes) {
-                    if (currentLine.trim()) lines.push(currentLine);
-                    currentLine = '';
-                } else {
-                    currentLine += char;
-                }
-            }
-            if (currentLine.trim()) lines.push(currentLine);
-            
-            const headers = parseCSVLine(lines[0]);
-            
-            return lines.slice(1).map(line => {
-                const values = parseCSVLine(line);
-                const obj = {};
-                headers.forEach((header, i) => {
-                    obj[header] = values[i] || '';
-                });
-                return obj;
-            }).filter(item => item['계약명']); // 빈 행 제거
-        }
-        
-        // CSV 라인 파싱
-        function parseCSVLine(line) {
-            const result = [];
-            let current = '';
-            let inQuotes = false;
-            
-            for (let i = 0; i < line.length; i++) {
-                const char = line[i];
-                const nextChar = line[i + 1];
-                
-                if (char === '"' && nextChar === '"') {
-                    current += '"';
-                    i++;
-                } else if (char === '"') {
-                    inQuotes = !inQuotes;
-                } else if (char === ',' && !inQuotes) {
-                    result.push(current.trim());
-                    current = '';
-                } else {
-                    current += char;
-                }
-            }
-            result.push(current.trim());
-            return result;
-        }
-
-        // 수요기관지역 파싱 (수요기관 분석과 동일한 로직)
         function parseRegion(regionStr) {
             if (!regionStr) return { province: '', city: '' };
-            
             const parts = regionStr.trim().split(' ');
-            return {
-                province: parts[0] || '',
-                city: parts[1] || ''
-            };
+            return { province: parts[0] || '', city: parts[1] || '' };
         }
 
-        // 필터 옵션 채우기 (수요기관 분석과 동일한 로직)
         function populateFilters() {
             const provinces = new Set();
-            
             allData.forEach(item => {
                 const region = parseRegion(item['수요기관지역']);
-                if (region.province && !region.province.match(/^\d+$/)) { // 숫자 제외
-                    provinces.add(region.province);
-                }
+                if (region.province && !region.province.match(/^\d+$/)) provinces.add(region.province);
             });
-            
             const provinceSelect = document.getElementById('filterProvince');
             [...provinces].sort().forEach(p => {
                 const option = document.createElement('option');
-                option.value = p;
-                option.textContent = p;
+                option.value = p; option.textContent = p;
                 provinceSelect.appendChild(option);
             });
-            
-            // 시/도 변경 시 시/군/구 업데이트
             provinceSelect.addEventListener('change', () => {
                 updateCityFilter();
                 applyFilters();
             });
         }
 
-        // 시/군/구 필터 업데이트 (실제 시/군/구만 표시)
         function updateCityFilter() {
             const selectedProvince = document.getElementById('filterProvince').value;
             const citySelect = document.getElementById('filterCity');
-            
             citySelect.innerHTML = '<option value="">전체</option>';
-            
             if (!selectedProvince) return;
-            
             const cities = new Set();
             allData.forEach(item => {
                 const region = parseRegion(item['수요기관지역']);
-                
-                // 시/군/구가 있고, 숫자가 아니며, 실제 기초자치단체인 경우만 추가
                 if (region.province === selectedProvince && region.city && !region.city.match(/^\d+$/)) {
-                    // 시/군/구로 끝나는 것만 허용 (광역기관 제외)
-                    if (region.city.endsWith('시') || region.city.endsWith('군') || region.city.endsWith('구')) {
-                        cities.add(region.city);
-                    }
+                    if (region.city.endsWith('시') || region.city.endsWith('군') || region.city.endsWith('구')) cities.add(region.city);
                 }
             });
-            
             [...cities].sort().forEach(c => {
                 const option = document.createElement('option');
-                option.value = c;
-                option.textContent = c;
+                option.value = c; option.textContent = c;
                 citySelect.appendChild(option);
             });
         }
 
-        // 필터 적용
         function applyFilters() {
             const year = document.getElementById('filterYear').value;
             const product = document.getElementById('filterProduct').value;
@@ -412,30 +227,18 @@
             const keyword = document.getElementById('searchKeyword').value.toLowerCase();
 
             filteredData = allData.filter(item => {
-                // 연도 필터
                 if (year && !item['기준일자']?.startsWith(year)) return false;
-                
-                // 품목 필터
                 if (product && item['품목'] !== product) return false;
-                
-                // 지역 필터 (수요기관지역 기준)
                 const region = parseRegion(item['수요기관지역']);
                 if (province && region.province !== province) return false;
                 if (city && region.city !== city) return false;
-                
-                // 공공조달분류 필터
                 if (category && item['공공조달분류'] !== category) return false;
-                
-                // 사업현황 필터
                 if (status) {
                     const daysLeft = calculateDaysLeftValue(item['완수일자']);
                     if (status === 'ongoing' && daysLeft < 0) return false;
                     if (status === 'completed' && daysLeft >= 0) return false;
                 }
-                
-                // 검색어 필터
                 if (keyword && !item['계약명']?.toLowerCase().includes(keyword)) return false;
-                
                 return true;
             });
 
@@ -444,62 +247,39 @@
             showAgencyList();
         }
 
-        // 통계 업데이트
         function updateStats() {
             const total = filteredData.length;
             const walking = filteredData.filter(d => d['품목'] === '보행매트').length;
             const vegetation = filteredData.filter(d => d['품목'] === '식생매트').length;
-            const avgScore = total > 0 
-                ? (filteredData.reduce((sum, d) => sum + (parseInt(d['적합도']) || 0), 0) / total).toFixed(1)
-                : 0;
-
+            const avgScore = total > 0 ? (filteredData.reduce((sum, d) => sum + (parseInt(d['적합도']) || 0), 0) / total).toFixed(1) : 0;
             document.getElementById('statTotal').textContent = total.toLocaleString() + '건';
             document.getElementById('statWalking').textContent = walking.toLocaleString() + '건';
             document.getElementById('statVegetation').textContent = vegetation.toLocaleString() + '건';
             document.getElementById('statAvgScore').textContent = avgScore + '점';
         }
 
-        // 수요기관 리스트 표시
         function showAgencyList() {
-            // 수요기관별 그룹화
             const agencyMap = {};
-            
             filteredData.forEach(item => {
                 const agency = item['수요기관명'] || '미분류';
                 if (!agencyMap[agency]) {
                     const region = parseRegion(item['수요기관지역']);
-                    agencyMap[agency] = {
-                        name: agency,
-                        region: region.city ? `${region.province} ${region.city}` : region.province,
-                        count: 0,
-                        totalAmount: 0,
-                        scores: []
-                    };
+                    agencyMap[agency] = { name: agency, region: region.city ? `${region.province} ${region.city}` : region.province, count: 0, totalAmount: 0, scores: [] };
                 }
                 agencyMap[agency].count++;
                 agencyMap[agency].totalAmount += parseInt(item['계약금액']?.replace(/,/g, '') || 0);
                 agencyMap[agency].scores.push(parseInt(item['적합도']) || 0);
             });
-            
-            // 평균 적합도 계산
             Object.values(agencyMap).forEach(agency => {
                 const totalScore = agency.scores.reduce((sum, score) => sum + score, 0);
                 agency.avgScore = agency.scores.length > 0 ? (totalScore / agency.scores.length).toFixed(1) : 0;
             });
-            
-            // 정렬 (프로젝트 수 내림차순)
             const agencies = Object.values(agencyMap).sort((a, b) => b.count - a.count);
-            
-            // 테이블 렌더링
             const tbody = document.getElementById('agencyList');
-            
             if (agencies.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="6" class="px-4 py-8 text-center text-gray-500">검색 결과가 없습니다.</td></tr>';
-                document.getElementById('agencyListContainer').style.display = 'block';
-                document.getElementById('contractTableContainer').style.display = 'none';
                 return;
             }
-            
             tbody.innerHTML = agencies.map((agency, index) => `
                 <tr class="border-b hover:bg-gray-50 cursor-pointer" onclick="selectAgency('${agency.name}')">
                     <td class="px-4 py-3 text-center text-sm text-gray-700" data-rank="${index + 1}">${index + 1}</td>
@@ -510,67 +290,30 @@
                     <td class="px-4 py-3 text-right text-sm font-semibold text-green-600" data-score="${agency.avgScore}">${agency.avgScore}점</td>
                 </tr>
             `).join('');
-            
             document.getElementById('agencyListContainer').style.display = 'block';
             document.getElementById('contractTableContainer').style.display = 'none';
         }
 
-        // 수요기관 테이블 정렬
-        let agencySortColumn = '순위';
-        let agencySortDirection = 'asc';
-
+        let agencySortColumn = '순위'; let agencySortDirection = 'asc';
         function sortAgencyTable(column) {
-            if (agencySortColumn === column) {
-                agencySortDirection = agencySortDirection === 'asc' ? 'desc' : 'asc';
-            } else {
-                agencySortColumn = column;
-                agencySortDirection = 'desc';
-            }
-
+            if (agencySortColumn === column) agencySortDirection = agencySortDirection === 'asc' ? 'desc' : 'asc';
+            else { agencySortColumn = column; agencySortDirection = 'desc'; }
             const tbody = document.getElementById('agencyList');
             const rows = Array.from(tbody.querySelectorAll('tr'));
-
             rows.sort((a, b) => {
                 let aVal, bVal;
-
                 switch(column) {
-                    case '순위':
-                        aVal = parseInt(a.querySelector('[data-rank]').dataset.rank);
-                        bVal = parseInt(b.querySelector('[data-rank]').dataset.rank);
-                        break;
-                    case '수요기관명':
-                        aVal = a.querySelector('[data-name]').dataset.name;
-                        bVal = b.querySelector('[data-name]').dataset.name;
-                        break;
-                    case '지역':
-                        aVal = a.querySelector('[data-region]').dataset.region;
-                        bVal = b.querySelector('[data-region]').dataset.region;
-                        break;
-                    case '프로젝트수':
-                        aVal = parseInt(a.querySelector('[data-count]').dataset.count);
-                        bVal = parseInt(b.querySelector('[data-count]').dataset.count);
-                        break;
-                    case '계약금액':
-                        aVal = parseInt(a.querySelector('[data-amount]').dataset.amount);
-                        bVal = parseInt(b.querySelector('[data-amount]').dataset.amount);
-                        break;
-                    case '적합도':
-                        aVal = parseFloat(a.querySelector('[data-score]').dataset.score);
-                        bVal = parseFloat(b.querySelector('[data-score]').dataset.score);
-                        break;
-                    default:
-                        return 0;
+                    case '순위': aVal = parseInt(a.querySelector('[data-rank]').dataset.rank); bVal = parseInt(b.querySelector('[data-rank]').dataset.rank); break;
+                    case '수요기관명': aVal = a.querySelector('[data-name]').dataset.name; bVal = b.querySelector('[data-name]').dataset.name; break;
+                    case '지역': aVal = a.querySelector('[data-region]').dataset.region; bVal = b.querySelector('[data-region]').dataset.region; break;
+                    case '프로젝트수': aVal = parseInt(a.querySelector('[data-count]').dataset.count); bVal = parseInt(b.querySelector('[data-count]').dataset.count); break;
+                    case '계약금액': aVal = parseInt(a.querySelector('[data-amount]').dataset.amount); bVal = parseInt(b.querySelector('[data-amount]').dataset.amount); break;
+                    case '적합도': aVal = parseFloat(a.querySelector('[data-score]').dataset.score); bVal = parseFloat(b.querySelector('[data-score]').dataset.score); break;
+                    default: return 0;
                 }
-
-                if (agencySortDirection === 'asc') {
-                    return aVal > bVal ? 1 : -1;
-                } else {
-                    return aVal < bVal ? 1 : -1;
-                }
+                return agencySortDirection === 'asc' ? (aVal > bVal ? 1 : -1) : (aVal < bVal ? 1 : -1);
             });
-
-            tbody.innerHTML = '';
-            rows.forEach(row => tbody.appendChild(row));
+            tbody.innerHTML = ''; rows.forEach(row => tbody.appendChild(row));
             updateAgencySortIcons();
         }
 
@@ -578,241 +321,112 @@
             const headers = document.querySelectorAll('#agencyListContainer th.sortable');
             headers.forEach(th => {
                 const icon = th.querySelector('.sort-icon');
-                if (icon) {
-                    icon.textContent = '▼';
-                    icon.style.color = '#9ca3af';
-                }
-            });
-
-            headers.forEach(th => {
+                if (icon) { icon.textContent = '▼'; icon.style.color = '#9ca3af'; }
                 if (th.textContent.includes(agencySortColumn)) {
                     const icon = th.querySelector('.sort-icon');
-                    if (icon) {
-                        icon.textContent = agencySortDirection === 'asc' ? '▲' : '▼';
-                        icon.style.color = '#f97316';
-                    }
+                    if (icon) { icon.textContent = agencySortDirection === 'asc' ? '▲' : '▼'; icon.style.color = '#f97316'; }
                 }
             });
         }
 
-        // 수요기관 선택
         function selectAgency(agencyName) {
             currentAgency = agencyName;
             agencyFilteredData = filteredData.filter(d => d['수요기관명'] === agencyName);
-            
-            // 정렬 (기본: 적합도 내림차순)
-            sortColumn = '적합도';
-            sortDirection = 'desc';
+            sortColumn = '적합도'; sortDirection = 'desc';
             sortData();
-            
             document.getElementById('selectedAgencyTitle').textContent = agencyName;
             document.getElementById('agencyListContainer').style.display = 'none';
             document.getElementById('contractTableContainer').style.display = 'block';
-            
-            currentPage = 1;
-            renderTable();
-            renderPagination();
+            currentPage = 1; renderTable(); renderPagination();
         }
 
-        // 수요기관 목록으로 돌아가기
-        function backToAgencyList() {
-            currentAgency = null;
-            document.getElementById('agencyListContainer').style.display = 'block';
-            document.getElementById('contractTableContainer').style.display = 'none';
-        }
-
-        // 테이블 정렬
+        function backToAgencyList() { currentAgency = null; document.getElementById('agencyListContainer').style.display = 'block'; document.getElementById('contractTableContainer').style.display = 'none'; }
         function sortTable(column) {
-            if (sortColumn === column) {
-                sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
-            } else {
-                sortColumn = column;
-                sortDirection = 'desc';
-            }
-            
-            sortData();
-            renderTable();
-            updateSortIcons();
+            if (sortColumn === column) sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+            else { sortColumn = column; sortDirection = 'desc'; }
+            sortData(); renderTable(); updateSortIcons();
         }
 
-        // 데이터 정렬
         function sortData() {
             agencyFilteredData.sort((a, b) => {
                 let aVal, bVal;
-                
                 switch(sortColumn) {
-                    case '착수일자':
-                        aVal = a['착수일자'] || '';
-                        bVal = b['착수일자'] || '';
-                        break;
-                    case '잔여기간':
-                        aVal = calculateDaysLeftValue(a['완수일자']);
-                        bVal = calculateDaysLeftValue(b['완수일자']);
-                        break;
-                    case '사업명':
-                        aVal = a['계약명'] || '';
-                        bVal = b['계약명'] || '';
-                        break;
-                    case '계약업체':
-                        aVal = a['계약업체'] || '';
-                        bVal = b['계약업체'] || '';
-                        break;
-                    case '계약금액':
-                        aVal = parseInt(a['계약금액']?.replace(/,/g, '') || 0);
-                        bVal = parseInt(b['계약금액']?.replace(/,/g, '') || 0);
-                        break;
-                    case '품목':
-                        aVal = a['품목'] || '';
-                        bVal = b['품목'] || '';
-                        break;
-                    case '적합도':
-                        aVal = parseInt(a['적합도']) || 0;
-                        bVal = parseInt(b['적합도']) || 0;
-                        break;
-                    default:
-                        return 0;
+                    case '착수일자': aVal = a['착수일자'] || ''; bVal = b['착수일자'] || ''; break;
+                    case '잔여기간': aVal = calculateDaysLeftValue(a['완수일자']); bVal = calculateDaysLeftValue(b['완수일자']); break;
+                    case '사업명': aVal = a['계약명'] || ''; bVal = b['계약명'] || ''; break;
+                    case '계약업체': aVal = a['계약업체'] || ''; bVal = b['계약업체'] || ''; break;
+                    case '계약금액': aVal = parseInt(a['계약금액']?.replace(/,/g, '') || 0); bVal = parseInt(b['계약금액']?.replace(/,/g, '') || 0); break;
+                    case '품목': aVal = a['품목'] || ''; bVal = b['품목'] || ''; break;
+                    case '적합도': aVal = parseInt(a['적합도']) || 0; bVal = parseInt(b['적합도']) || 0; break;
+                    default: return 0;
                 }
-                
-                if (sortDirection === 'asc') {
-                    return aVal > bVal ? 1 : -1;
-                } else {
-                    return aVal < bVal ? 1 : -1;
-                }
+                return sortDirection === 'asc' ? (aVal > bVal ? 1 : -1) : (aVal < bVal ? 1 : -1);
             });
         }
 
-        // 정렬 아이콘 업데이트
         function updateSortIcons() {
-            document.querySelectorAll('.sort-icon').forEach(icon => {
-                icon.textContent = '▼';
-                icon.style.color = '#9ca3af';
-            });
-            
-            const headers = document.querySelectorAll('th.sortable');
+            document.querySelectorAll('#contractTableContainer .sort-icon').forEach(icon => { icon.textContent = '▼'; icon.style.color = '#9ca3af'; });
+            const headers = document.querySelectorAll('#contractTableContainer th.sortable');
             headers.forEach(th => {
                 if (th.textContent.includes(sortColumn)) {
                     const icon = th.querySelector('.sort-icon');
-                    icon.textContent = sortDirection === 'asc' ? '▲' : '▼';
-                    icon.style.color = '#f97316';
+                    icon.textContent = sortDirection === 'asc' ? '▲' : '▼'; icon.style.color = '#f97316';
                 }
             });
         }
 
-        // 테이블 렌더링
         function renderTable() {
             const start = (currentPage - 1) * itemsPerPage;
             const end = start + itemsPerPage;
             const pageData = agencyFilteredData.slice(start, end);
-
-            if (pageData.length === 0) {
-                document.getElementById('contractList').innerHTML = `
-                    <tr><td colspan="7" class="px-4 py-8 text-center text-gray-500">
-                        데이터가 없습니다.
-                    </td></tr>
-                `;
-                return;
-            }
-
             const tbody = document.getElementById('contractList');
+            if (pageData.length === 0) { tbody.innerHTML = '<tr><td colspan="7" class="px-4 py-8 text-center text-gray-500">데이터가 없습니다.</td></tr>'; return; }
             tbody.innerHTML = pageData.map(item => {
-                const startDate = item['착수일자'] || '-';
-                const daysLeft = calculateDaysLeft(item['완수일자']);
-                const projectName = item['계약명'] || '-';
-                const contractor = item['계약업체'] || '-';
-                const amount = formatAmount(item['계약금액']);
-                const product = item['품목'] || '-';
+                const daysLeftStr = calculateDaysLeft(item['완수일자']);
                 const score = parseInt(item['적합도']) || 0;
-
                 return `
                     <tr class="border-b hover:bg-gray-50">
-                        <td class="px-4 py-3 text-sm text-gray-700">${startDate}</td>
-                        <td class="px-4 py-3 text-sm ${daysLeft.includes('종료') ? 'text-gray-400' : 'text-red-600 font-semibold'}">${daysLeft}</td>
-                        <td class="px-4 py-3 text-sm text-gray-900">${projectName}</td>
-                        <td class="px-4 py-3 text-sm text-gray-700">${contractor}</td>
-                        <td class="px-4 py-3 text-sm text-gray-900 text-right font-medium">${amount}</td>
-                        <td class="px-4 py-3">
-                            <span class="inline-block px-3 py-1 text-xs font-semibold rounded-full ${
-                                product === '보행매트' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'
-                            }">${product.replace('매트', '')}</span>
-                        </td>
+                        <td class="px-4 py-3 text-sm text-gray-700">${item['착수일자'] || '-'}</td>
+                        <td class="px-4 py-3 text-sm ${daysLeftStr.includes('종료') ? 'text-gray-400' : 'text-red-600 font-semibold'}">${daysLeftStr}</td>
+                        <td class="px-4 py-3 text-sm text-gray-900">${item['계약명'] || '-'}</td>
+                        <td class="px-4 py-3 text-sm text-gray-700">${item['계약업체'] || '-'}</td>
+                        <td class="px-4 py-3 text-sm text-gray-900 text-right font-medium">${formatAmount(item['계약금액'])}</td>
+                        <td class="px-4 py-3"><span class="inline-block px-3 py-1 text-xs font-semibold rounded-full ${item['품목'] === '보행매트' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}">${(item['품목'] || '').replace('매트', '')}</span></td>
                         <td class="px-4 py-3 text-sm font-semibold text-orange-600 text-center">${score}점</td>
-                    </tr>
-                `;
+                    </tr>`;
             }).join('');
-            
             updateSortIcons();
         }
 
-        // 페이지네이션 렌더링
         function renderPagination() {
             const totalPages = Math.ceil(agencyFilteredData.length / itemsPerPage);
             const pagination = document.getElementById('pagination');
-            
-            if (totalPages <= 1) {
-                pagination.innerHTML = '';
-                return;
-            }
-
+            if (totalPages <= 1) { pagination.innerHTML = ''; return; }
             let html = '';
             for (let i = 1; i <= totalPages; i++) {
-                if (i === currentPage) {
-                    html += `<button class="px-4 py-2 bg-orange-500 text-white rounded">${i}</button>`;
-                } else {
-                    html += `<button onclick="goToPage(${i})" class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300">${i}</button>`;
-                }
+                html += i === currentPage ? `<button class="px-4 py-2 bg-orange-500 text-white rounded">${i}</button>` : `<button onclick="goToPage(${i})" class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300">${i}</button>`;
             }
             pagination.innerHTML = html;
         }
 
-        function goToPage(page) {
-            currentPage = page;
-            renderTable();
-            renderPagination();
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-        }
-
-        // 잔여기간 계산 (표시용)
+        function goToPage(page) { currentPage = page; renderTable(); renderPagination(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
         function calculateDaysLeft(endDate) {
             if (!endDate) return '-';
-            
             const end = new Date(endDate.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3'));
-            const today = new Date();
-            const diff = Math.ceil((end - today) / (1000 * 60 * 60 * 24));
-            
-            if (diff < 0) return '종료됨';
-            if (diff === 0) return 'D-Day';
-            return `D-${diff}`;
+            const diff = Math.ceil((end - new Date()) / (1000 * 60 * 60 * 24));
+            return diff < 0 ? '종료됨' : (diff === 0 ? 'D-Day' : `D-${diff}`);
         }
-
-        // 잔여기간 계산 (정렬용 숫자값)
         function calculateDaysLeftValue(endDate) {
             if (!endDate) return -9999;
-            
             const end = new Date(endDate.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3'));
-            const today = new Date();
-            return Math.ceil((end - today) / (1000 * 60 * 60 * 24));
+            return Math.ceil((end - new Date()) / (1000 * 60 * 60 * 24));
         }
-
-        // 금액 포맷 (천원 단위, 원 제거)
         function formatAmount(amount) {
             if (!amount) return '-';
             const num = parseInt(String(amount).replace(/,/g, ''));
-            if (isNaN(num)) return '-';
-            return Math.round(num / 1000).toLocaleString();
+            return isNaN(num) ? '-' : Math.round(num / 1000).toLocaleString();
         }
-
-        // 필터 초기화
-        function resetFilters() {
-            document.getElementById('filterYear').value = '';
-            document.getElementById('filterProduct').value = '';
-            document.getElementById('filterProvince').value = '경기도';
-            document.getElementById('filterCity').value = '';
-            document.getElementById('filterCategory').value = '';
-            document.getElementById('filterStatus').value = 'ongoing';
-            document.getElementById('searchKeyword').value = '';
-            updateCityFilter();
-            applyFilters();
-        }
+        function resetFilters() { document.getElementById('filterYear').value = ''; document.getElementById('filterProduct').value = ''; document.getElementById('filterProvince').value = '경기도'; document.getElementById('filterCity').value = ''; document.getElementById('filterCategory').value = ''; document.getElementById('filterStatus').value = 'ongoing'; document.getElementById('searchKeyword').value = ''; updateCityFilter(); applyFilters(); }
     </script>
 </body>
 </html>
