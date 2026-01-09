@@ -6,6 +6,7 @@
     <title>담당자 DB - 판매실적 대시보드</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="../assets/css/common.css" rel="stylesheet">
+    <script src="../assets/js/sheets-api.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap');
         body { font-family: 'Noto Sans KR', sans-serif; }
@@ -14,7 +15,6 @@
     </style>
 </head>
 <body class="bg-gray-50 text-gray-800">
-
     <nav class="bg-white shadow-sm border-b">
         <div class="max-w-7xl mx-auto px-4 py-4">
             <a href="../index.html" class="text-lg font-semibold text-gray-900">← 대시보드로 돌아가기</a>
@@ -27,18 +27,12 @@
             <p class="text-gray-600">수요기관 담당자 정보를 검색하고 연락처를 확인하세요.</p>
         </div>
 
-        <!-- 검색 및 필터 영역 -->
         <div class="bg-white rounded-lg shadow-md p-6 mb-6">
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                <!-- 검색 -->
                 <div class="md:col-span-2">
                     <label class="block text-sm font-medium text-gray-700 mb-2">통합 검색</label>
-                    <input type="text" id="searchKeyword" placeholder="수요기관, 과, 담당자명 검색..." 
-                           class="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                           onkeyup="if(event.key==='Enter') applyFilters()">
+                    <input type="text" id="searchKeyword" placeholder="수요기관, 과, 담당자명 검색..." class="w-full px-4 py-2 border border-gray-300 rounded-lg" onkeyup="if(event.key==='Enter') applyFilters()">
                 </div>
-
-                <!-- 지역 필터 -->
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">지역</label>
                     <select id="filterRegion" class="w-full px-4 py-2 border border-gray-300 rounded-lg" onchange="applyFilters()">
@@ -46,18 +40,9 @@
                     </select>
                 </div>
             </div>
-
-            <div class="flex justify-between items-center">
-                <div class="text-sm text-gray-600">
-                    총 <span id="totalCount" class="font-semibold text-gray-900">0</span>건
-                </div>
-                <button onclick="resetFilters()" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300">
-                    초기화
-                </button>
-            </div>
+            <div class="flex justify-between items-center"><div class="text-sm text-gray-600">총 <span id="totalCount" class="font-semibold text-gray-900">0</span>건</div><button onclick="resetFilters()" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300">초기화</button></div>
         </div>
 
-        <!-- 담당자 테이블 -->
         <div class="bg-white rounded-lg shadow-md overflow-hidden">
             <div class="overflow-x-auto">
                 <table class="w-full">
@@ -70,228 +55,93 @@
                             <th class="px-4 py-3 text-left text-sm font-semibold text-gray-700">담당업무</th>
                         </tr>
                     </thead>
-                    <tbody id="contactList">
-                        <tr>
-                            <td colspan="5" class="px-4 py-8 text-center text-gray-500">
-                                데이터를 불러오는 중...
-                            </td>
-                        </tr>
-                    </tbody>
+                    <tbody id="contactList"><tr><td colspan="5" class="px-4 py-8 text-center text-gray-500">데이터를 불러오는 중...</td></tr></tbody>
                 </table>
             </div>
         </div>
-
-        <!-- 페이지네이션 -->
-        <div class="mt-6 flex justify-center">
-            <div id="pagination" class="flex gap-2"></div>
-        </div>
+        <div class="mt-6 flex justify-center"><div id="pagination" class="flex gap-2"></div></div>
     </main>
-
-    <footer class="bg-white border-t mt-12">
-        <div class="max-w-7xl mx-auto px-4 py-6">
-            <p class="text-center text-gray-500 text-sm">
-                © 2025 판매실적 대시보드. All Rights Reserved.
-            </p>
-        </div>
-    </footer>
 
     <script src="../assets/js/common.js"></script>
     <script>
-        // 구글시트 URL
-        const SHEET_URL = 'https://docs.google.com/spreadsheets/d/1aqfIQD0OO55Vpw4JgThpq6IdlBB_OvTBAaQ-PCEz7ok/edit?usp=sharing';
-        const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSIEBLy3SZsk-JRN4OTbIoeZq8KTHJW9H8DuFtvQH7umYJKzI4TzDA4pfC4uFHOVWib3cE5F9w4qos5/pub?output=csv';
-        
         let allData = [];
         let filteredData = [];
         let currentPage = 1;
         const itemsPerPage = 30;
 
-        // 페이지 로드 시 데이터 가져오기
         document.addEventListener('DOMContentLoaded', async () => {
             await loadData();
             populateFilters();
             applyFilters();
         });
 
-        // 데이터 로드
         async function loadData() {
             try {
-                const response = await fetch(CSV_URL);
-                const csvText = await response.text();
-                allData = parseCSV(csvText);
+                allData = await window.sheetsAPI.loadCSVData('contactDatabase');
                 console.log('데이터 로드 완료:', allData.length, '건');
             } catch (error) {
                 console.error('데이터 로드 실패:', error);
-                document.getElementById('contactList').innerHTML = `
-                    <tr><td colspan="5" class="px-4 py-8 text-center text-red-500">
-                        데이터 로드 실패. 구글시트 접근 권한을 확인해주세요.
-                    </td></tr>
-                `;
+                document.getElementById('contactList').innerHTML = '<tr><td colspan="5" class="px-4 py-8 text-center text-red-500">데이터 로드 실패. API 연결을 확인해주세요.</td></tr>';
             }
         }
 
-        // CSV 파싱
-        function parseCSV(csv) {
-            const lines = csv.trim().split('\n');
-            const headers = lines[0].split(',').map(h => h.replace(/"/g, '').trim());
-            
-            return lines.slice(1).map(line => {
-                const values = line.split(',').map(v => v.replace(/"/g, '').trim());
-                const obj = {};
-                headers.forEach((header, i) => {
-                    obj[header] = values[i] || '';
-                });
-                return obj;
-            }).filter(item => item['수요기관']); // 빈 행 제거
-        }
-
-        // 필터 옵션 채우기
         function populateFilters() {
             const regions = [...new Set(allData.map(d => d['수요기관']))].filter(Boolean).sort();
             const regionSelect = document.getElementById('filterRegion');
             regions.forEach(r => {
                 const option = document.createElement('option');
-                option.value = r;
-                option.textContent = r;
+                option.value = r; option.textContent = r;
                 regionSelect.appendChild(option);
             });
         }
 
-        // 필터 적용
         function applyFilters() {
             const keyword = document.getElementById('searchKeyword').value.toLowerCase();
             const region = document.getElementById('filterRegion').value;
-
             filteredData = allData.filter(item => {
                 if (region && item['수요기관'] !== region) return false;
                 if (keyword) {
-                    const searchText = [
-                        item['수요기관'],
-                        item['과'],
-                        item['담당자명'],
-                        item['핵심시설'],
-                        item['관할영역'],
-                        item['사업유형']
-                    ].join(' ').toLowerCase();
+                    const searchText = [item['수요기관'], item['과'], item['담당자명'], item['핵심시설'], item['관할영역'], item['사업유형']].join(' ').toLowerCase();
                     if (!searchText.includes(keyword)) return false;
                 }
                 return true;
             });
-
-            // 수요기관, 과 순으로 정렬
-            filteredData.sort((a, b) => {
-                if (a['수요기관'] !== b['수요기관']) {
-                    return a['수요기관'].localeCompare(b['수요기관'], 'ko');
-                }
-                return (a['과'] || '').localeCompare(b['과'] || '', 'ko');
-            });
-
+            filteredData.sort((a, b) => (a['수요기관'] !== b['수요기관']) ? a['수요기관'].localeCompare(b['수요기관'], 'ko') : (a['과'] || '').localeCompare(b['과'] || '', 'ko'));
             document.getElementById('totalCount').textContent = filteredData.length;
-            currentPage = 1;
-            renderTable();
-            renderPagination();
+            currentPage = 1; renderTable(); renderPagination();
         }
 
-        // 테이블 렌더링
         function renderTable() {
             const start = (currentPage - 1) * itemsPerPage;
             const end = start + itemsPerPage;
             const pageData = filteredData.slice(start, end);
-
-            if (pageData.length === 0) {
-                document.getElementById('contactList').innerHTML = `
-                    <tr><td colspan="5" class="px-4 py-8 text-center text-gray-500">
-                        검색 결과가 없습니다.
-                    </td></tr>
-                `;
-                return;
-            }
-
             const tbody = document.getElementById('contactList');
-            tbody.innerHTML = pageData.map(item => {
-                const agency = item['수요기관'] || '-';
-                const dept = item['과'] || '-';
-                const name = item['담당자명'] || '이름없음';
-                const phone = item['연락처'] || '-';
-                
-                // 담당업무 직접 사용
-                const task = item['담당업무'] || '-';
-
-                return `
-                    <tr class="border-b hover:bg-gray-50">
-                        <td class="px-4 py-3 text-sm text-gray-900 font-medium">${agency}</td>
-                        <td class="px-4 py-3 text-sm text-gray-700">${dept}</td>
-                        <td class="px-4 py-3 text-sm text-gray-700">${name}</td>
-                        <td class="px-4 py-3 text-sm">
-                            <span class="phone-copy text-blue-600 font-medium" onclick="copyPhone('${phone}')" title="클릭하여 복사">
-                                ${phone}
-                            </span>
-                        </td>
-                        <td class="px-4 py-3 text-sm text-gray-600">${task}</td>
-                    </tr>
-                `;
-            }).join('');
+            if (pageData.length === 0) { tbody.innerHTML = '<tr><td colspan="5" class="px-4 py-8 text-center text-gray-500">검색 결과가 없습니다.</td></tr>'; return; }
+            tbody.innerHTML = pageData.map(item => `
+                <tr class="border-b hover:bg-gray-50">
+                    <td class="px-4 py-3 text-sm text-gray-900 font-medium">${item['수요기관'] || '-'}</td>
+                    <td class="px-4 py-3 text-sm text-gray-700">${item['과'] || '-'}</td>
+                    <td class="px-4 py-3 text-sm text-gray-700">${item['담당자명'] || '이름없음'}</td>
+                    <td class="px-4 py-3 text-sm"><span class="phone-copy text-blue-600 font-medium" onclick="copyPhone('${item['연락처'] || '-'}')" title="클릭하여 복사">${item['연락처'] || '-'}</span></td>
+                    <td class="px-4 py-3 text-sm text-gray-600">${item['담당업무'] || '-'}</td>
+                </tr>`).join('');
         }
 
-        // 페이지네이션 렌더링
         function renderPagination() {
             const totalPages = Math.ceil(filteredData.length / itemsPerPage);
             const pagination = document.getElementById('pagination');
-            
-            if (totalPages <= 1) {
-                pagination.innerHTML = '';
-                return;
-            }
-
+            if (totalPages <= 1) { pagination.innerHTML = ''; return; }
             let html = '';
-            
-            // 이전 버튼
-            if (currentPage > 1) {
-                html += `<button onclick="goToPage(${currentPage - 1})" class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300">이전</button>`;
-            }
-
-            // 페이지 번호
-            const startPage = Math.max(1, currentPage - 2);
-            const endPage = Math.min(totalPages, currentPage + 2);
-
-            for (let i = startPage; i <= endPage; i++) {
-                if (i === currentPage) {
-                    html += `<button class="px-4 py-2 bg-purple-500 text-white rounded">${i}</button>`;
-                } else {
-                    html += `<button onclick="goToPage(${i})" class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300">${i}</button>`;
-                }
-            }
-
-            // 다음 버튼
-            if (currentPage < totalPages) {
-                html += `<button onclick="goToPage(${currentPage + 1})" class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300">다음</button>`;
-            }
-
+            if (currentPage > 1) html += `<button onclick="goToPage(${currentPage - 1})" class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300">이전</button>`;
+            const startPage = Math.max(1, currentPage - 2); const endPage = Math.min(totalPages, currentPage + 2);
+            for (let i = startPage; i <= endPage; i++) html += i === currentPage ? `<button class="px-4 py-2 bg-purple-500 text-white rounded">${i}</button>` : `<button onclick="goToPage(${i})" class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300">${i}</button>`;
+            if (currentPage < totalPages) html += `<button onclick="goToPage(${currentPage + 1})" class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300">다음</button>`;
             pagination.innerHTML = html;
         }
 
-        function goToPage(page) {
-            currentPage = page;
-            renderTable();
-            renderPagination();
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-        }
-
-        // 전화번호 복사
-        function copyPhone(phone) {
-            navigator.clipboard.writeText(phone).then(() => {
-                alert('전화번호가 복사되었습니다: ' + phone);
-            }).catch(err => {
-                console.error('복사 실패:', err);
-            });
-        }
-
-        // 필터 초기화
-        function resetFilters() {
-            document.getElementById('searchKeyword').value = '';
-            document.getElementById('filterRegion').value = '';
-            applyFilters();
-        }
+        function goToPage(page) { currentPage = page; renderTable(); renderPagination(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+        function copyPhone(phone) { navigator.clipboard.writeText(phone).then(() => alert('전화번호가 복사되었습니다: ' + phone)); }
+        function resetFilters() { document.getElementById('searchKeyword').value = ''; document.getElementById('filterRegion').value = ''; applyFilters(); }
     </script>
 </body>
 </html>
