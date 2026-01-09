@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>예산안 분석 - 판매실적 대시보드</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="../assets/css/common.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap');
+        body { font-family: 'Noto Sans KR', sans-serif; }
+        .tree-item { transition: all 0.2s; }
+        .tree-item:hover { background-color: #f9fafb; }
+        .tree-toggle { cursor: pointer; user-select: none; }
+        .tree-children { margin-left: 1.5rem; }
+        .collapsed { display: none; }
+        .increase { color: #dc2626; }
+        .decrease { color: #2563eb; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+
+    <nav class="bg-white shadow-sm border-b">
+        <div class="max-w-7xl mx-auto px-4 py-4">
+            <a href="../index.html" class="text-lg font-semibold text-gray-900">← 대시보드로 돌아가기</a>
+        </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto px-4 py-8">
+        <div class="mb-8">
+            <h1 class="text-3xl font-bold text-gray-900 mb-2">예산안 분석</h1>
+            <p class="text-gray-600">연도별 예산을 비교하고 증감 추이를 분석합니다.</p>
+        </div>
+
+        <!-- 연도 선택 및 검색 -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <!-- 기준연도 -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">기준연도</label>
+                    <select id="baseYear" class="w-full px-4 py-2 border border-gray-300 rounded-lg" onchange="loadData()">
+                        <option value="">선택안함</option>
+                        <option value="2024">2024</option>
+                        <option value="2025" selected>2025</option>
+                    </select>
+                </div>
+
+                <!-- 분석연도 -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">분석연도</label>
+                    <select id="compareYear" class="w-full px-4 py-2 border border-gray-300 rounded-lg" onchange="loadData()">
+                        <option value="" selected>선택안함</option>
+                        <option value="2024">2024</option>
+                        <option value="2025">2025</option>
+                        <option value="2026">2026</option>
+                    </select>
+                </div>
+
+                <!-- 검색 -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">검색</label>
+                    <input type="text" id="searchKeyword" placeholder="수요기관/과/사업명 검색..." 
+                           class="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                           onkeyup="if(event.key==='Enter') applySearch()">
+                </div>
+            </div>
+
+            <div class="flex justify-between items-center">
+                <div class="text-sm text-gray-600">
+                    <span id="modeDescription">2025년 예산 데이터를 표시합니다.</span>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="expandAll()" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 text-sm">
+                        전체 펼치기
+                    </button>
+                    <button onclick="collapseAll()" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 text-sm">
+                        전체 접기
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 통계 요약 -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div class="bg-white rounded-lg shadow-md p-4">
+                <div class="text-sm text-gray-600 mb-1">총 예산</div>
+                <div class="text-2xl font-bold text-gray-900" id="statTotalBudget">-</div>
+            </div>
+            <div class="bg-white rounded-lg shadow-md p-4">
+                <div class="text-sm text-gray-600 mb-1">수요기관</div>
+                <div class="text-2xl font-bold text-teal-600" id="statAgencyCount">-</div>
+            </div>
+            <div class="bg-white rounded-lg shadow-md p-4">
+                <div class="text-sm text-gray-600 mb-1">사업 수</div>
+                <div class="text-2xl font-bold text-blue-600" id="statProjectCount">-</div>
+            </div>
+        </div>
+
+        <!-- 계층 구조 테이블 -->
+        <div class="bg-white rounded-lg shadow-md overflow-hidden">
+            <div class="p-4 border-b bg-gray-50">
+                <h2 class="text-lg font-bold text-gray-900">예산 계층 구조</h2>
+            </div>
+            <div id="budgetTree" class="p-4">
+                <div class="text-center text-gray-500 py-8">
+                    데이터를 불러오는 중...
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="bg-white border-t mt-12">
+        <div class="max-w-7xl mx-auto px-4 py-6">
+            <p class="text-center text-gray-500 text-sm">
+                © 2025 판매실적 대시보드. All Rights Reserved.
+            </p>
+        </div>
+    </footer>
+
+    <script src="../assets/js/common.js"></script>
+    <script>
+        // 구글시트 URL
+        const SHEET_URL = 'https://docs.google.com/spreadsheets/d/1S4zcWLbU7iRRkrF7j_5NRaUx62DK5PTixxD1G0bhJ1w/edit?usp=sharing';
+        const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQkxzuw39onkX8WuPBhcMSfQjexisNckZvJ1pV1UhnBikUJvGoMI6cTfSAI5sIckK8LuZZZhb40TUtK/pub?output=csv';
+        
+        let allData = [];
+        let treeData = {};
+
+        // 페이지 로드 시 데이터 가져오기
+        document.addEventListener('DOMContentLoaded', async () => {
+            await loadData();
+        });
+
+        // 데이터 로드
+        async function loadData() {
+            const baseYear = document.getElementById('baseYear').value;
+            const compareYear = document.getElementById('compareYear').value;
+
+            if (!baseYear) {
+                document.getElementById('budgetTree').innerHTML = `
+                    <div class="text-center text-gray-500 py-8">
+                        기준연도를 선택해주세요.
+                    </div>
+                `;
+                return;
+            }
+
+            try {
+                const response = await fetch(CSV_URL);
+                const csvText = await response.text();
+                allData = parseCSV(csvText);
+                
+                // 선택한 연도 데이터 필터링 (문자열/숫자 모두 처리)
+                const filteredData = allData.filter(d => String(d['연도']).trim() === String(baseYear).trim());
+                
+                console.log('데이터 로드 완료:', filteredData.length, '건');
+                
+                buildTree(filteredData);
+                updateStats(filteredData);
+                renderTree();
+
+                // 모드 설명 업데이트
+                if (compareYear) {
+                    document.getElementById('modeDescription').textContent = 
+                        `${baseYear}년과 ${compareYear}년 예산을 비교합니다. (비교 기능은 ${compareYear}년 데이터 추가 시 활성화됩니다.)`;
+                } else {
+                    document.getElementById('modeDescription').textContent = 
+                        `${baseYear}년 예산 데이터를 표시합니다.`;
+                }
+
+            } catch (error) {
+                console.error('데이터 로드 실패:', error);
+                document.getElementById('budgetTree').innerHTML = `
+                    <div class="text-center text-red-500 py-8">
+                        데이터 로드 실패. 구글시트 접근 권한을 확인해주세요.
+                    </div>
+                `;
+            }
+        }
+
+        // CSV 파싱
+        function parseCSV(csv) {
+            const lines = csv.trim().split('\n');
+            const headers = lines[0].split(',').map(h => h.replace(/"/g, '').trim());
+            
+            return lines.slice(1).map(line => {
+                const values = line.split(',').map(v => v.replace(/"/g, '').trim());
+                const obj = {};
+                headers.forEach((header, i) => {
+                    obj[header] = values[i] || '';
+                });
+                return obj;
+            }).filter(item => item['수요기관']); // 빈 행 제거
+        }
+
+        // 트리 구조 생성
+        function buildTree(data) {
+            treeData = {};
+
+            data.forEach(item => {
+                const agency = item['수요기관명'] || '미분류';
+                const dept = item['부서'] || '미분류';
+                const project = item['세부사업'] || '미부류';
+                const subProject = item['사업명'] || '-';
+                const budget = parseInt(item['예산액 (천원)']) || 0;
+
+                // 수요기관 레벨
+                if (!treeData[agency]) {
+                    treeData[agency] = { 
+                        name: agency, 
+                        budget: 0, 
+                        children: {} 
+                    };
+                }
+                treeData[agency].budget += budget;
+
+                // 과 레벨
+                if (!treeData[agency].children[dept]) {
+                    treeData[agency].children[dept] = { 
+                        name: dept, 
+                        budget: 0, 
+                        children: {} 
+                    };
+                }
+                treeData[agency].children[dept].budget += budget;
+
+                // 세부사업 레벨
+                if (!treeData[agency].children[dept].children[project]) {
+                    treeData[agency].children[dept].children[project] = { 
+                        name: project, 
+                        budget: 0, 
+                        children: [] 
+                    };
+                }
+                treeData[agency].children[dept].children[project].budget += budget;
+
+                // 사업명 레벨
+                treeData[agency].children[dept].children[project].children.push({
+                    name: subProject,
+                    budget: budget
+                });
+            });
+        }
+
+        // 통계 업데이트
+        function updateStats(data) {
+            const totalBudget = data.reduce((sum, d) => sum + (parseInt(d['예산액 (천원)']) || 0), 0);
+            const agencyCount = new Set(data.map(d => d['수요기관명'])).size;
+            const projectCount = data.length;
+
+            document.getElementById('statTotalBudget').textContent = (totalBudget / 1000).toFixed(1) + '백만원';
+            document.getElementById('statAgencyCount').textContent = agencyCount + '개';
+            document.getElementById('statProjectCount').textContent = projectCount + '건';
+        }
+
+        // 트리 렌더링
+        function renderTree() {
+            const container = document.getElementById('budgetTree');
+            
+            if (Object.keys(treeData).length === 0) {
+                container.innerHTML = '<div class="text-center text-gray-500 py-8">데이터가 없습니다.</div>';
+                return;
+            }
+
+            let html = '';
+
+            // 수요기관별 정렬 (예산 내림차순)
+            const sortedAgencies = Object.values(treeData).sort((a, b) => b.budget - a.budget);
+
+            sortedAgencies.forEach(agency => {
+                const agencyId = 'agency_' + Math.random().toString(36).substr(2, 9);
+                html += `
+                    <div class="tree-item border-b">
+                        <div class="tree-toggle flex justify-between items-center py-3 px-2 font-bold" onclick="toggleNode('${agencyId}')">
+                            <div>
+                                <span id="${agencyId}_icon">▼</span>
+                                <span class="ml-2 text-gray-900">${agency.name}</span>
+                            </div>
+                            <div class="text-teal-600">${formatBudget(agency.budget)}</div>
+                        </div>
+                        <div id="${agencyId}" class="tree-children">
+                `;
+
+                // 과별 정렬
+                const sortedDepts = Object.values(agency.children).sort((a, b) => b.budget - a.budget);
+
+                sortedDepts.forEach(dept => {
+                    const deptId = 'dept_' + Math.random().toString(36).substr(2, 9);
+                    html += `
+                        <div class="tree-item">
+                            <div class="tree-toggle flex justify-between items-center py-2 px-2 font-semibold" onclick="toggleNode('${deptId}')">
+                                <div>
+                                    <span id="${deptId}_icon">▼</span>
+                                    <span class="ml-2 text-gray-800">${dept.name}</span>
+                                </div>
+                                <div class="text-gray-700">${formatBudget(dept.budget)}</div>
+                            </div>
+                            <div id="${deptId}" class="tree-children">
+                    `;
+
+                    // 세부사업별 정렬
+                    const sortedProjects = Object.values(dept.children).sort((a, b) => b.budget - a.budget);
+
+                    sortedProjects.forEach(project => {
+                        const projectId = 'project_' + Math.random().toString(36).substr(2, 9);
+                        html += `
+                            <div class="tree-item">
+                                <div class="tree-toggle flex justify-between items-center py-2 px-2" onclick="toggleNode('${projectId}')">
+                                    <div>
+                                        <span id="${projectId}_icon">▼</span>
+                                        <span class="ml-2 text-gray-700">${project.name}</span>
+                                    </div>
+                                    <div class="text-gray-600">${formatBudget(project.budget)}</div>
+                                </div>
+                                <div id="${projectId}" class="tree-children">
+                        `;
+
+                        // 사업명 정렬
+                        const sortedSubProjects = project.children.sort((a, b) => b.budget - a.budget);
+
+                        sortedSubProjects.forEach(subProject => {
+                            html += `
+                                <div class="flex justify-between items-center py-2 px-2 text-sm">
+                                    <div class="text-gray-600">• ${subProject.name}</div>
+                                    <div class="text-gray-500">${formatBudget(subProject.budget)}</div>
+                                </div>
+                            `;
+                        });
+
+                        html += `
+                                </div>
+                            </div>
+                        `;
+                    });
+
+                    html += `
+                            </div>
+                        </div>
+                    `;
+                });
+
+                html += `
+                        </div>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+
+        // 노드 토글
+        function toggleNode(nodeId) {
+            const node = document.getElementById(nodeId);
+            const icon = document.getElementById(nodeId + '_icon');
+            
+            if (node.classList.contains('collapsed')) {
+                node.classList.remove('collapsed');
+                icon.textContent = '▼';
+            } else {
+                node.classList.add('collapsed');
+                icon.textContent = '▶';
+            }
+        }
+
+        // 전체 펼치기
+        function expandAll() {
+            document.querySelectorAll('.tree-children').forEach(node => {
+                node.classList.remove('collapsed');
+            });
+            document.querySelectorAll('[id$="_icon"]').forEach(icon => {
+                icon.textContent = '▼';
+            });
+        }
+
+        // 전체 접기
+        function collapseAll() {
+            document.querySelectorAll('.tree-children').forEach(node => {
+                node.classList.add('collapsed');
+            });
+            document.querySelectorAll('[id$="_icon"]').forEach(icon => {
+                icon.textContent = '▶';
+            });
+        }
+
+        // 검색 적용
+        function applySearch() {
+            const keyword = document.getElementById('searchKeyword').value.toLowerCase();
+            
+            if (!keyword) {
+                document.querySelectorAll('.tree-item').forEach(item => {
+                    item.style.display = '';
+                });
+                return;
+            }
+
+            document.querySelectorAll('.tree-item').forEach(item => {
+                const text = item.textContent.toLowerCase();
+                if (text.includes(keyword)) {
+                    item.style.display = '';
+                    // 부모 노드도 표시
+                    let parent = item.parentElement;
+                    while (parent && parent.classList.contains('tree-children')) {
+                        parent.classList.remove('collapsed');
+                        parent = parent.parentElement;
+                    }
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+        }
+
+        // 예산 포맷
+        function formatBudget(amount) {
+            if (amount >= 1000000) {
+                return (amount / 1000000).toFixed(1) + '십억원';
+            } else if (amount >= 1000) {
+                return (amount / 1000).toFixed(0) + '백만원';
+            } else {
+                return amount.toLocaleString() + '천원';
+            }
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>관급매출 집계 - 판매실적 대시보드</title>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#10b981">
+    <link rel="apple-touch-icon" href="/icons/icon-192.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="../assets/css/common.css" rel="stylesheet">
+    <script src="../assets/js/sheets-api.js"></script>
+<style>
+    @media print {
+        body * {
+            visibility: hidden; /* 1. 기본적으로 모든 요소를 숨깁니다. */
+        }
+        .printable-area, .printable-area * {
+            visibility: visible; /* 2. 인쇄할 영역만 다시 보이게 합니다. */
+        }
+        .no-print {
+            display: none !important; /* 인쇄 제외할 요소는 확실히 숨깁니다. */
+        }
+        
+        /* [핵심 수정 1] 겹침의 원인인 absolute 포지션을 해제하여 자연스러운 흐름으로 변경 */
+        .printable-area {
+            position: static; 
+        }
+
+        /* [핵심 수정 2] 요약 카드 인쇄 후, 다음 내용은 새 페이지에서 시작하도록 강제 */
+        .stats-grid.printable-area {
+            page-break-after: always;
+        }
+        
+        /* 인쇄 용지 설정 */
+        @page {
+            size: A4 landscape;
+            margin: 1.5cm;
+        }
+        
+        /* 인쇄용 테이블 스타일 */
+        table thead {
+            display: table-header-group; /* 페이지가 넘어가도 표 머리글이 반복되도록 설정 */
+        }
+        .data-table {
+            font-size: 9pt;
+            box-shadow: none;
+            border: 1px solid #dee2e6;
+        }
+        .data-table th, .data-table td {
+            border: 1px solid #dee2e6;
+            padding: 5px;
+            color: #000 !important;
+            background-color: #fff !important;
+        }
+        .data-table th {
+            background-color: #f8f9fa !important;
+        }
+    }
+</style>
+</head>
+<body class="bg-gray-50">
+    <nav class="bg-white shadow-sm border-b no-print">
+        <div class="max-w-6xl mx-auto px-4 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-4">
+                    <a href="../index.html" class="text-lg font-semibold text-gray-900">판매실적 대시보드</a>
+                    <span class="text-gray-400">|</span>
+                    <span class="text-green-600 font-medium">관급매출 집계</span>
+                </div>
+                <div class="flex space-x-2">
+                    <a href="../index.html" class="nav-link">
+                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>
+                        홈
+                    </a>
+                    <a href="./monthly-sales.html" class="nav-link">
+                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 8v8m-4-5v5m-4-2v2m-2 4h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                        월별매출 현황
+                    </a>
+                </div>
+            </div>
+        </div>
+    </nav>
+    <main class="max-w-6xl mx-auto px-4 py-8">
+        <div class="mb-8 no-print"><h1 class="text-3xl font-bold text-gray-900 mb-2">관급매출 집계</h1><p class="text-gray-600">두발로 주식회사 거래처별, 지역별, 소관구분별 매출 집계 데이터를 확인할 수 있습니다.</p></div>
+        <div class="filter-section bg-white rounded-lg shadow-md p-6 mb-8 no-print"><div class="grid grid-cols-1 md:grid-cols-5 gap-4"><div><label class="form-label">분석 기간</label><select id="analysisYear" class="form-select"><option value="all">전체</option><option value="2026" selected>2026년</option>
+                        <option value="2025">2025년</option><option value="2024">2024년</option><option value="2023">2023년</option><option value="2022">2022년</option><option value="2021">2021년</option><option value="2020">2020년</option></select></div><div><label class="form-label">품목</label><select id="productType" class="form-select"><option value="all">전체</option><option value="보행매트" selected>보행매트</option><option value="식생매트">식생매트</option><option value="논슬립">논슬립</option><option value="고정핀">고정핀</option></select></div><div><label class="form-label">지역구분</label><select id="regionFilter" class="form-select"><option value="all">전체</option></select></div><div><label class="form-label">소관구분</label><select id="agencyTypeFilter" class="form-select"><option value="all">전체</option></select></div><div class="flex items-end"><button id="analyzeBtn" class="btn btn-success w-full"><svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>분석</button></div></div></div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 stats-grid printable-area no-print"><div id="totalCustomersCard" class="bg-white rounded-lg shadow-md p-6 stats-card"><div class="flex items-center"><div class="p-2 bg-blue-100 rounded-lg"><svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg></div><div class="ml-4"><p class="text-sm font-medium text-gray-600">총 고객 수</p><p class="text-2xl font-bold text-gray-900" id="totalCustomers">로딩중...</p></div></div></div><div id="totalContractsCard" class="bg-white rounded-lg shadow-md p-6 stats-card"><div class="flex items-center"><div class="p-2 bg-green-100 rounded-lg"><svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg></div><div class="ml-4"><p class="text-sm font-medium text-gray-600">총 계약 건수</p><p class="text-2xl font-bold text-gray-900" id="totalContracts">로딩중...</p></div></div></div><div id="totalSalesCard" class="bg-white rounded-lg shadow-md p-6 stats-card"><div class="flex items-center"><div class="p-2 bg-purple-100 rounded-lg"><svg class="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1"></path></svg></div><div class="ml-4"><p class="text-sm font-medium text-gray-600">총 거래액</p><p class="text-2xl font-bold text-gray-900" id="totalSales">로딩중...</p></div></div></div></div>
+        <div id="analysisPanel" class="bg-white rounded-lg shadow-md mb-8 printable-area">
+            <div class="border-b border-gray-200 no-print"><nav class="-mb-px flex space-x-8 px-6"><button id="customerTab" class="analysis-tab active">고객별 순위</button><button id="regionTab" class="analysis-tab">지역별 분석</button><button id="typeTab" class="analysis-tab">소관기관별 분석</button></nav></div>
+            <div id="customerPanel" class="tab-panel p-6">
+                <div class="flex justify-between items-center mb-4"><h3 class="text-lg font-semibold text-gray-900">거래처별 매출 순위</h3><div class="flex space-x-2 no-print"><button id="printCustomerBtn" class="btn btn-secondary btn-sm"><svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm7-8V5a2 2 0 00-2-2H5a2 2 0 00-2 2v4h14z"></path></svg>인쇄</button><button id="exportCustomerBtn" class="btn btn-secondary btn-sm"><svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>CSV 내보내기</button></div></div>
+                <div class="overflow-x-auto"><table id="customerTable" class="min-w-full divide-y divide-gray-200 data-table"><thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="rank" data-sort-type="number"><span>순위</span></th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="customer" data-sort-type="string"><span>수요기관명</span></th>
+                        <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="region" data-sort-type="string"><span>지역</span></th>
+                        <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="agencyType" data-sort-type="string"><span>소관기관</span></th>
+                        <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="count" data-sort-type="number"><span>계약건수</span></th>
+                        <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="amount" data-sort-type="number"><span>매출액</span></th>
+                        <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="share" data-sort-type="number"><span>비중</span></th>
+                    </tr>
+                </thead><tbody id="customerTableBody" class="bg-white divide-y divide-gray-200"></tbody></table></div>
+            </div>
+            <div id="regionPanel" class="tab-panel p-6 hidden">
+                <div class="flex justify-between items-center mb-4"><h3 class="text-lg font-semibold text-gray-900">지역별 매출 분석</h3><div class="flex space-x-2 no-print"><button id="printRegionBtn" class="btn btn-secondary btn-sm"><svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm7-8V5a2 2 0 00-2-2H5a2 2 0 00-2 2v4h14z"></path></svg>인쇄</button><button id="exportRegionBtn" class="btn btn-secondary btn-sm"><svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>CSV 내보내기</button></div></div>
+                <div class="overflow-x-auto"><table id="regionTable" class="min-w-full divide-y divide-gray-200 data-table"><thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="rank" data-sort-type="number"><span>순위</span></th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="region" data-sort-type="string"><span>지역</span></th>
+                        <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="customerCount" data-sort-type="number"><span>고객수</span></th>
+                        <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="contractCount" data-sort-type="number"><span>계약건수</span></th>
+                        <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="amount" data-sort-type="number"><span>매출액</span></th>
+                        <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="share" data-sort-type="number"><span>비중</span></th>
+                    </tr>
+                </thead><tbody id="regionTableBody" class="bg-white divide-y divide-gray-200"></tbody></table></div>
+            </div>
+            <div id="typePanel" class="tab-panel p-6 hidden">
+                <div class="flex justify-between items-center mb-4"><h3 class="text-lg font-semibold text-gray-900">소관기관별 분석</h3><div class="flex space-x-2 no-print"><button id="printTypeBtn" class="btn btn-secondary btn-sm"><svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm7-8V5a2 2 0 00-2-2H5a2 2 0 00-2 2v4h14z"></path></svg>인쇄</button><button id="exportTypeBtn" class="btn btn-secondary btn-sm"><svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>CSV 내보내기</button></div></div>
+                <div class="overflow-x-auto"><table id="typeTable" class="min-w-full divide-y divide-gray-200 data-table"><thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="rank" data-sort-type="number"><span>순위</span></th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="agencyType" data-sort-type="string"><span>소관기관</span></th>
+                        <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="customerCount" data-sort-type="number"><span>고객수</span></th>
+                        <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="contractCount" data-sort-type="number"><span>계약건수</span></th>
+                        <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="amount" data-sort-type="number"><span>매출액</span></th>
+                        <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="share" data-sort-type="number"><span>비중</span></th>
+                    </tr>
+                </thead><tbody id="typeTableBody" class="bg-white divide-y divide-gray-200"></tbody></table></div>
+            </div>
+        </div>
+        <div id="customerDetailPanel" class="bg-white rounded-lg shadow-md mb-8 hidden"></div>
+    </main>
+    <script src="../assets/js/common.js"></script>
+    <script src="../assets/js/customer-analysis.js"></script>
+</body>
+</html>

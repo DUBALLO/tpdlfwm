@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>트렌드 분석 - 판매실적 대시보드</title>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#10b981">
+    <link rel="apple-touch-icon" href="/icons/icon-192.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="../assets/css/common.css" rel="stylesheet">
+    <script src="../assets/js/sheets-api.js"></script>
+    <style>
+        @media print {
+            body * { visibility: hidden; }
+            .printable-area, .printable-area * { visibility: visible; }
+            .printable-area { position: absolute; left: 0; top: 0; width: 100%; }
+            .no-print { display: none; }
+            @page { size: A4 portrait; margin: 2cm; }
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <nav class="bg-white shadow-sm border-b no-print">
+        <div class="max-w-6xl mx-auto px-4 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-4">
+                    <a href="../index.html" class="text-lg font-semibold text-gray-900">판매실적 대시보드</a>
+                    <span class="text-gray-400">|</span>
+                    <span class="text-green-600 font-medium">트렌드 분석</span>
+                </div>
+                <div class="flex space-x-2">
+                    <a href="../index.html" class="nav-link"><svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>홈</a>
+                    <a href="./agency-purchase.html" class="nav-link">수요기관 분석</a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-6xl mx-auto px-4 py-8">
+        <div class="mb-8 no-print">
+            <h1 class="text-3xl font-bold text-gray-900 mb-2">트렌드 분석</h1>
+            <p class="text-gray-600">다양한 기준의 판매 추이를 그래프로 확인합니다.</p>
+        </div>
+
+        <div class="filter-section bg-white rounded-lg shadow-md p-6 mb-8 no-print">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div>
+                    <label class="form-label">기준연도</label>
+                    <select id="baseYear" class="form-select"></select>
+                </div>
+                <div>
+                    <label class="form-label">분석연도</label>
+                    <select id="comparisonYear" class="form-select"></select>
+                </div>
+                <div>
+                    <label class="form-label">품목</label>
+                    <select id="productFilter" class="form-select">
+                        <option value="all" selected>전체</option>
+                        <option value="보행매트">보행매트</option>
+                        <option value="식생매트">식생매트</option>
+                        <option value="논슬립">논슬립</option>
+                    </select>
+                </div>
+                <div class="flex items-end">
+                    <button id="analyzeBtn" class="btn btn-success w-full">
+                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+                        분석
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="bg-white rounded-lg shadow-md mb-8">
+            <div class="border-b border-gray-200 no-print">
+                <nav class="-mb-px flex space-x-8 px-6" id="trendTabs">
+                    <button data-tab="monthly" class="analysis-tab active">월별 판매 추이</button>
+                    <button data-tab="regional" class="analysis-tab">지역별 판매 현황</button>
+                    <button data-tab="agencyType" class="analysis-tab">소관구분별 판매 현황</button>
+                </nav>
+            </div>
+            
+            <div id="monthlyTab" class="tab-content p-6 printable-area">
+                <div class="flex justify-between items-center mb-4"><h3 class="text-lg font-semibold text-gray-900">월별 판매 추이</h3><button id="printMonthlyBtn" class="btn btn-secondary btn-sm no-print">인쇄</button></div>
+                <canvas id="monthlyChart"></canvas>
+            </div>
+
+            <div id="regionalTab" class="tab-content p-6 printable-area hidden">
+                <div class="flex justify-between items-center mb-4"><h3 class="text-lg font-semibold text-gray-900">지역별 판매 현황</h3><button id="printRegionalBtn" class="btn btn-secondary btn-sm no-print">인쇄</button></div>
+                <canvas id="regionalChart"></canvas>
+            </div>
+
+            <div id="agencyTypeTab" class="tab-content p-6 printable-area hidden">
+                 <div class="flex justify-between items-center mb-4"><h3 class="text-lg font-semibold text-gray-900">소관구분별 판매 현황</h3><button id="printAgencyTypeBtn" class="btn btn-secondary btn-sm no-print">인쇄</button></div>
+                <canvas id="agencyTypeChart"></canvas>
+            </div>
+        </div>
+    </main>
+
+    <script src="../assets/js/common.js"></script>
+    <script src="../assets/js/trend-analysis.js"></script>
+</body>
+</html>
