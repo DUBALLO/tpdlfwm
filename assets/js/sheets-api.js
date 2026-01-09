@@ -6,7 +6,11 @@ class SheetsAPI {
             procurement: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSplrmlhekVgQLbcCpHLX8d2HBNAErwj-UknKUZVI5KCMen-kUCWXlRONPR6oc0Wj1zd6FP-EfRaFeU/pub?output=csv',
             nonSlip: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQBfSqfw_9hUtZddet8YWQTRZxiQlo9jIPWZLs1wKTlpv9mb5pGfmrf75vbOy63u4eHvzlrI_S3TLmc/pub?output=csv',
             vegetationMat: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR_JIdgWP0WcM1Eb5gw29tmBymlk_KicHDmVyZAAnHrViIKGlLLZzpx950H1vI7rFpc0K_0nFmO8BT1/pub?output=csv',
-            monthlySales: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSjy2slFJrAxxPO8WBmehXH4iJtcfxr-HUkvL-YXw-BIvmA1Z3kTa8DfdWVnwVl3r4jhjmHFUYIju3j/pub?output=csv'
+            monthlySales: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSjy2slFJrAxxPO8WBmehXH4iJtcfxr-HUkvL-YXw-BIvmA1Z3kTa8DfdWVnwVl3r4jhjmHFUYIju3j/pub?output=csv',
+            // 아래 3개 시트 주소 추가
+            contractMonitoring: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQEOv1Lt4jAKmc5znjAAKovg2AiL7zWXpBAA9rJULDEJA_kY8eholkBfNMM2SeXkRFHcYEmGkgSuBob/pub?output=csv',
+            contactDatabase: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSIEBLy3SZsk-JRN4OTbIoeZq8KTHJW9H8DuFtvQH7umYJKzI4TzDA4pfC4uFHOVWib3cE5F9w4qos5/pub?output=csv',
+            budgetAnalysis: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQkxzuw39onkX8WuPBhcMSfQjexisNckZvJ1pV1UhnBikUJvGoMI6cTfSAI5sIckK8LuZZZhb40TUtK/pub?output=csv'
         };
         this.currentUrl = '';
         this.corsProxies = [
@@ -16,17 +20,13 @@ class SheetsAPI {
     }
 
     async loadAllProcurementData() {
-        console.log('모든 조달 데이터(보행, 식생, 논슬립) 로드 시작...');
         const dataSources = ['procurement', 'vegetationMat', 'nonSlip'];
-        
         try {
             const promises = dataSources.map(source => this.loadCSVData(source));
             const results = await Promise.all(promises);
-            const combinedData = results.flat(); 
-            console.log(`총 ${combinedData.length}개의 조달 데이터 통합 완료.`);
-            return combinedData;
+            return results.flat(); 
         } catch (error) {
-            console.error('하나 이상의 조달 데이터 로드에 실패했습니다:', error);
+            console.error('조달 데이터 로드 실패:', error);
             throw new Error('모든 조달 데이터를 불러오는 데 실패했습니다.');
         }
     }
@@ -36,7 +36,6 @@ class SheetsAPI {
             throw new Error(`유효하지 않은 시트 타입입니다: ${sheetType}`);
         }
         this.currentUrl = this.csvUrls[sheetType];
-        console.log(`'${sheetType}' 시트의 CSV 데이터 로드 시작...`);
 
         try {
             const data = await this.directLoad();
@@ -71,9 +70,6 @@ class SheetsAPI {
         return this.parseCSV(csvText);
     }
     
-    /**
-     * CSV 한 줄을 파싱하는 헬퍼 함수. 큰따옴표 안의 쉼표는 무시합니다.
-     */
     parseCSVLine(line) {
         const result = [];
         let current = '';
@@ -81,7 +77,6 @@ class SheetsAPI {
         
         for (let i = 0; i < line.length; i++) {
             const char = line[i];
-            
             if (char === '"') {
                 if (inQuotes && line[i + 1] === '"') {
                     current += '"';
@@ -92,6 +87,9 @@ class SheetsAPI {
             } else if (char === ',' && !inQuotes) {
                 result.push(current);
                 current = '';
+            } else if ((char === '\r' || char === '\n') && !inQuotes) {
+                // 줄바꿈 무시 (이미 라인별로 잘려 들어옴)
+                continue;
             } else {
                 current += char;
             }
@@ -100,25 +98,56 @@ class SheetsAPI {
         return result.map(s => s.trim().replace(/^"|"$/g, ''));
     }
 
-    /**
-     * CSV 텍스트 전체를 파싱하여 객체 배열로 변환하는 메인 함수.
-     */
     parseCSV(csvText) {
-        const lines = csvText.trim().split('\n').filter(line => line); // 빈 줄 제거
-        if (lines.length < 2) return [];
+        // 실제 데이터 내의 줄바꿈을 처리하기 위해 정규식 사용
+        const rows = [];
+        let currentRow = [];
+        let currentCell = '';
+        let inQuotes = false;
 
-        const headers = this.parseCSVLine(lines[0]);
+        for (let i = 0; i < csvText.length; i++) {
+            const char = csvText[i];
+            const nextChar = csvText[i+1];
+
+            if (char === '"') {
+                if (inQuotes && nextChar === '"') {
+                    currentCell += '"';
+                    i++;
+                } else {
+                    inQuotes = !inQuotes;
+                }
+            } else if (char === ',' && !inQuotes) {
+                currentRow.push(currentCell.trim());
+                currentCell = '';
+            } else if ((char === '\n' || char === '\r') && !inQuotes) {
+                if (char === '\r' && nextChar === '\n') i++;
+                currentRow.push(currentCell.trim());
+                if (currentRow.length > 0 && currentRow.some(c => c !== "")) {
+                    rows.push(currentRow);
+                }
+                currentRow = [];
+                currentCell = '';
+            } else {
+                currentCell += char;
+            }
+        }
+        if (currentCell || currentRow.length > 0) {
+            currentRow.push(currentCell.trim());
+            rows.push(currentRow);
+        }
+
+        if (rows.length < 2) return [];
+
+        const headers = rows[0].map(h => h.replace(/^"|"$/g, '').trim());
         const data = [];
 
-        for (let i = 1; i < lines.length; i++) {
-            const values = this.parseCSVLine(lines[i]);
-            // 헤더와 값의 개수가 다르면 데이터 오류로 간주하고 건너뜀
-            if (values.length !== headers.length) continue; 
+        for (let i = 1; i < rows.length; i++) {
+            const values = rows[i];
+            if (values.length < headers.length) continue; 
             
             const item = {};
             headers.forEach((header, index) => {
-                const cleanHeader = header.trim();
-                item[cleanHeader] = values[index] ? values[index].trim() : '';
+                item[header] = values[index] ? values[index].replace(/^"|"$/g, '').trim() : '';
             });
             data.push(item);
         }
