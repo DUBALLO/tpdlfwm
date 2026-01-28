@@ -89,9 +89,9 @@ function renderInventory() {
     });
 
     // 요약 카드 업데이트
-    document.getElementById('totalProd').textContent = CommonUtils.formatNumber(totalP) + "개";
-    document.getElementById('totalOut').textContent = CommonUtils.formatNumber(totalO) + "개";
-    document.getElementById('totalStock').textContent = CommonUtils.formatNumber(totalS) + "개";
+    document.getElementById('totalProd').textContent = CommonUtils.formatNumber(totalP) + "m";
+    document.getElementById('totalOut').textContent = CommonUtils.formatNumber(totalO) + "m";
+    document.getElementById('totalStock').textContent = CommonUtils.formatNumber(totalS) + "m";
 }
 
 // 품목 데이터 초기화 도우미
