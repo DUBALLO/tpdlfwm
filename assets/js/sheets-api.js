@@ -1,4 +1,4 @@
-// Google Sheets API 연결 및 CSV 로드 기능 (v6 - 안정화 버전)
+// Google Sheets API 연결 및 CSV 로드 기능 (v7 - 재고 관리 추가 버전)
 
 class SheetsAPI {
     constructor() {
@@ -7,10 +7,10 @@ class SheetsAPI {
             nonSlip: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQBfSqfw_9hUtZddet8YWQTRZxiQlo9jIPWZLs1wKTlpv9mb5pGfmrf75vbOy63u4eHvzlrI_S3TLmc/pub?output=csv',
             vegetationMat: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR_JIdgWP0WcM1Eb5gw29tmBymlk_KicHDmVyZAAnHrViIKGlLLZzpx950H1vI7rFpc0K_0nFmO8BT1/pub?output=csv',
             monthlySales: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSjy2slFJrAxxPO8WBmehXH4iJtcfxr-HUkvL-YXw-BIvmA1Z3kTa8DfdWVnwVl3r4jhjmHFUYIju3j/pub?output=csv',
-            // 아래 3개 시트 주소 추가
             contractMonitoring: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQEOv1Lt4jAKmc5znjAAKovg2AiL7zWXpBAA9rJULDEJA_kY8eholkBfNMM2SeXkRFHcYEmGkgSuBob/pub?output=csv',
             contactDatabase: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSIEBLy3SZsk-JRN4OTbIoeZq8KTHJW9H8DuFtvQH7umYJKzI4TzDA4pfC4uFHOVWib3cE5F9w4qos5/pub?output=csv',
             budgetAnalysis: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQkxzuw39onkX8WuPBhcMSfQjexisNckZvJ1pV1UhnBikUJvGoMI6cTfSAI5sIckK8LuZZZhb40TUtK/pub?output=csv',
+            // ▼▼▼ 실시간 재고 관리용 구글 시트 주소 추가 ▼▼▼
             inventory: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQkA2tLZxiYFn8w0T8WF8-ibHFWAILyq44LRkHaTtAP9E55Fvc3U6gAYeL9i_ZJjinUYmP1X3-LGHNm/pub?output=csv'
         };
         this.currentUrl = '';
@@ -89,7 +89,6 @@ class SheetsAPI {
                 result.push(current);
                 current = '';
             } else if ((char === '\r' || char === '\n') && !inQuotes) {
-                // 줄바꿈 무시 (이미 라인별로 잘려 들어옴)
                 continue;
             } else {
                 current += char;
@@ -100,7 +99,6 @@ class SheetsAPI {
     }
 
     parseCSV(csvText) {
-        // 실제 데이터 내의 줄바꿈을 처리하기 위해 정규식 사용
         const rows = [];
         let currentRow = [];
         let currentCell = '';
