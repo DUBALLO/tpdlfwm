@@ -11,6 +11,7 @@ class SheetsAPI {
             contractMonitoring: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQEOv1Lt4jAKmc5znjAAKovg2AiL7zWXpBAA9rJULDEJA_kY8eholkBfNMM2SeXkRFHcYEmGkgSuBob/pub?output=csv',
             contactDatabase: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSIEBLy3SZsk-JRN4OTbIoeZq8KTHJW9H8DuFtvQH7umYJKzI4TzDA4pfC4uFHOVWib3cE5F9w4qos5/pub?output=csv',
             budgetAnalysis: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQkxzuw39onkX8WuPBhcMSfQjexisNckZvJ1pV1UhnBikUJvGoMI6cTfSAI5sIckK8LuZZZhb40TUtK/pub?output=csv'
+            inventory: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQkA2tLZxiYFn8w0T8WF8-ibHFWAILyq44LRkHaTtAP9E55Fvc3U6gAYeL9i_ZJjinUYmP1X3-LGHNm/pub?output=csv'
         };
         this.currentUrl = '';
         this.corsProxies = [
