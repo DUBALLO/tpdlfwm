@@ -7,6 +7,13 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="../assets/css/common.css" rel="stylesheet">
     <script src="../assets/js/sheets-api.js"></script>
+    <style>
+        /* 재고 관리 페이지 전용 스타일 - 테이블 가운데 정렬 */
+        .data-table th,
+        .data-table td {
+            text-align: center !important;
+        }
+    </style>
 </head>
 <body class="bg-gray-50">
     <nav class="bg-white shadow-sm border-b no-print">
@@ -20,7 +27,7 @@
         <div class="bg-white rounded-lg shadow-md p-6 mb-8 no-print">
             <div class="flex flex-wrap items-end gap-4">
                 <div>
-                    <label class="form-label">제품 타입</label>
+                    <label class="form-label">생산 제품</label>
                     <select id="filterProductType" class="form-select w-40">
                         <option value="보행매트">보행매트</option>
                         <option value="식생매트">식생매트</option>
@@ -44,6 +51,7 @@
                     </select>
                 </div>
                 <button id="searchBtn" class="btn btn-primary">조회하기</button>
+                <button id="weeklyStatusBtn" class="btn btn-warning">생산 현황</button>
             </div>
         </div>
 
@@ -66,10 +74,18 @@
             <table class="data-table w-full">
                 <thead>
                     <tr>
-                        <th class="px-4 py-3 text-left">품목명 (규격)</th>
-                        <th class="px-4 py-3 text-right">당월 생산</th>
-                        <th class="px-4 py-3 text-right">당월 출고</th>
-                        <th class="px-4 py-3 text-right bg-blue-50">현재 재고</th>
+                        <th class="px-4 py-3 text-center cursor-pointer hover:bg-gray-100" onclick="sortTable('name')">
+                            품목명 (규격) <span id="sort-name" class="sort-icon"></span>
+                        </th>
+                        <th class="px-4 py-3 text-center cursor-pointer hover:bg-gray-100" onclick="sortTable('prod')">
+                            당월 생산 <span id="sort-prod" class="sort-icon"></span>
+                        </th>
+                        <th class="px-4 py-3 text-center cursor-pointer hover:bg-gray-100" onclick="sortTable('out')">
+                            당월 출고 <span id="sort-out" class="sort-icon"></span>
+                        </th>
+                        <th class="px-4 py-3 text-center bg-blue-50 cursor-pointer hover:bg-blue-100" onclick="sortTable('stock')">
+                            현재 재고 <span id="sort-stock" class="sort-icon"></span>
+                        </th>
                     </tr>
                 </thead>
                 <tbody id="inventoryList">
