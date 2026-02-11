@@ -19,6 +19,8 @@ body { font-family: 'Noto Sans KR', sans-serif; line-height: 1.6; color: #374151
 .btn-secondary:hover { background-color: #4b5563; transform: translateY(-1px); }
 .btn-success { background-color: #059669; color: white; }
 .btn-success:hover { background-color: #047857; transform: translateY(-1px); }
+.btn-warning { background-color: #f97316; color: white; }
+.btn-warning:hover { background-color: #ea580c; transform: translateY(-1px); }
 
 /* 테이블 스타일 */
 .data-table { width: 100%; border-collapse: collapse; background: white; border-radius: 0.5rem; overflow: hidden; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1); }
@@ -139,4 +141,24 @@ body { font-family: 'Noto Sans KR', sans-serif; line-height: 1.6; color: #374151
 .inline-flex svg {
     width: 1rem;
     height: 1rem;
+}
+
+/* 정렬 아이콘 스타일 */
+.sort-icon {
+    display: inline-block;
+    font-size: 0.7rem;
+    color: #9ca3af;
+    transition: color 0.2s ease;
+}
+
+.sort-icon.active {
+    color: #2563eb;
+}
+
+.sort-icon.asc::before {
+    content: '▲';
+}
+
+.sort-icon.desc::before {
+    content: '▼';
 }
