@@ -22,6 +22,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
         showLoadingState(true, '데이터를 불러오는 중...');
         ensureLatestAppliedDateElement();
+        ensureResultLayout();
 
         await waitForDependencies();
         await loadAndParseData();
@@ -1039,4 +1040,107 @@ function escapeHtml(value) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
+}
+
+function ensureResultLayout() {
+    if (document.getElementById('agencyRankTable')) return;
+
+    const container =
+        document.querySelector('.container') ||
+        document.querySelector('.content') ||
+        document.querySelector('main') ||
+        document.body;
+
+    const wrapper = document.createElement('div');
+    wrapper.id = 'agencyAnalysisResultArea';
+    wrapper.style.marginTop = '24px';
+
+    wrapper.innerHTML = `
+        <div class="card" style="margin-bottom: 20px; border: 1px solid #e5e7eb; border-radius: 12px;">
+            <div class="card-body" style="padding: 20px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; gap:12px; flex-wrap:wrap;">
+                    <div>
+                        <h3 style="margin:0; font-size:20px; font-weight:700;">수요기관 구매 순위</h3>
+                        <div style="margin-top:6px; color:#666; font-size:13px;">
+                            <span id="totalAgencyCount">0개 기관</span>
+                            <span style="margin:0 8px;">|</span>
+                            <span id="totalAgencyAmount">0원</span>
+                        </div>
+                    </div>
+                    <div style="display:flex; gap:8px;">
+                        <button type="button" class="btn btn-outline-secondary" data-action="export-csv" data-table-id="agencyRankTable" data-filename="agency-rank.csv">CSV 내보내기</button>
+                        <button type="button" class="btn btn-outline-secondary" data-action="print-panel" data-panel-id="agencyRankPanel">인쇄</button>
+                    </div>
+                </div>
+
+                <div id="agencyRankPanel">
+                    <div style="overflow:auto;">
+                        <table id="agencyRankTable" class="table table-hover" style="width:100%; border-collapse:collapse;">
+                            <thead></thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card" style="margin-bottom: 20px; border: 1px solid #e5e7eb; border-radius: 12px;">
+            <div class="card-body" style="padding: 20px;">
+                <div style="margin-bottom:12px;">
+                    <h3 id="agencyDetailTitle" style="margin:0; font-size:20px; font-weight:700;">기관 상세분석</h3>
+                    <div id="agencyDetailMeta" style="margin-top:6px; color:#666; font-size:13px;"></div>
+                </div>
+
+                <div style="display:grid; grid-template-columns: 1fr; gap:20px;">
+                    <div>
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                            <h4 style="margin:0; font-size:16px; font-weight:700;">공급사별 요약</h4>
+                            <div style="display:flex; gap:8px;">
+                                <button type="button" class="btn btn-outline-secondary" data-action="export-csv" data-table-id="purchaseDetailTable" data-filename="purchase-detail.csv">CSV 내보내기</button>
+                            </div>
+                        </div>
+                        <div style="overflow:auto;">
+                            <table id="purchaseDetailTable" class="table table-hover" style="width:100%; border-collapse:collapse;">
+                                <thead></thead>
+                                <tbody>
+                                    <tr><td colspan="3" class="text-center text-muted py-4">선택된 기관이 없습니다.</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div>
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                            <h4 style="margin:0; font-size:16px; font-weight:700;">계약 상세</h4>
+                            <div style="display:flex; gap:8px;">
+                                <button type="button" class="btn btn-outline-secondary" data-action="export-csv" data-table-id="contractDetailTable" data-filename="contract-detail.csv">CSV 내보내기</button>
+                            </div>
+                        </div>
+                        <div style="overflow:auto;">
+                            <table id="contractDetailTable" class="table table-hover" style="width:100%; border-collapse:collapse;">
+                                <thead></thead>
+                                <tbody>
+                                    <tr><td colspan="7" class="text-center text-muted py-4">선택된 기관이 없습니다.</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div id="trendPanel">
+                        <div style="margin-bottom:8px;">
+                            <h4 style="margin:0; font-size:16px; font-weight:700;">연도별 추이</h4>
+                        </div>
+                        <div style="display:grid; grid-template-columns: minmax(320px, 2fr) minmax(220px, 1fr); gap:20px; align-items:start;">
+                            <div style="height:320px; position:relative;">
+                                <canvas id="trendChart"></canvas>
+                            </div>
+                            <div id="trendSummary"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    container.appendChild(wrapper);
 }
