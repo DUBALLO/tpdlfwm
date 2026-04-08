@@ -34,6 +34,21 @@ async function loadAndParseProcurementData() {
         return Number(cleaned) || 0;
     };
 
+    const parseContractOrder = (item) => {
+        const candidates = [
+            item['계약차수'],
+            item['계약변경차수'],
+            item['계약납품통합변경차수'],
+            item['cntrctDlvrReqChgOrd']
+        ];
+
+        for (const value of candidates) {
+            const num = parseInt(String(value ?? '').replace(/[^\d]/g, ''), 10);
+            if (!Number.isNaN(num) && num > 0) return num;
+        }
+        return 1;
+    };
+
     const rawData = await window.sheetsAPI.loadAllProcurementData();
 
     return rawData
@@ -47,7 +62,8 @@ async function loadAndParseProcurementData() {
             contractName: (item['계약명'] || '').trim(),
             product: (item['세부품명'] || '').trim(),
             supplier: (item['업체'] || '').trim(),
-            rawAmount: String(item['공급금액'] ?? '').trim()
+            rawAmount: String(item['공급금액'] ?? '').trim(),
+            contractOrder: parseContractOrder(item)
         }))
         .filter(item =>
             item.supplier === '두발로 주식회사' &&
@@ -84,8 +100,7 @@ function buildContractSummary(data, includeZeroAmount = false) {
                 firstContractDate: item.contractDate,
                 latestContractDate: item.contractDate,
                 lineCount: 0,
-                hasPositive: false,
-                hasNegative: false
+                contractOrder: item.contractOrder || 1
             });
         }
 
@@ -94,31 +109,21 @@ function buildContractSummary(data, includeZeroAmount = false) {
         summary.amount += Number(item.amount) || 0;
         summary.lineCount += 1;
 
-        if ((Number(item.amount) || 0) > 0) summary.hasPositive = true;
-        if ((Number(item.amount) || 0) < 0) summary.hasNegative = true;
+        if ((item.contractOrder || 1) > summary.contractOrder) {
+            summary.contractOrder = item.contractOrder || 1;
+        }
 
         if (item.contractDate < summary.firstContractDate) {
             summary.firstContractDate = item.contractDate;
         }
+
         if (item.contractDate > summary.latestContractDate) {
             summary.latestContractDate = item.contractDate;
             summary.contractDate = item.contractDate;
         }
     });
 
-    let result = Array.from(contractMap.values()).map(item => {
-        let status = '정상';
-        if (item.hasPositive && item.hasNegative && item.amount === 0) {
-            status = '계약취소';
-        } else if (item.hasPositive && item.hasNegative) {
-            status = '계약변경';
-        }
-
-        return {
-            ...item,
-            status
-        };
-    });
+    let result = Array.from(contractMap.values());
 
     if (!includeZeroAmount) {
         result = result.filter(item => item.amount !== 0);
@@ -206,7 +211,6 @@ async function analyzeCustomers() {
         (agencyType === 'all' || item.agencyType === agencyType)
     );
 
-    // 요약 화면은 순액 기준, 0원 계약은 제외
     currentFilteredData = buildContractSummary(currentFilteredRawData, false);
 
     if (currentFilteredData.length === 0) {
@@ -433,7 +437,7 @@ function showCustomerDetail(customerName) {
                         <tr>
                             <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="contractDate" data-sort-type="string"><span>최종일자</span></th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="contractName" data-sort-type="string"><span>계약명</span></th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="status" data-sort-type="string"><span>상태</span></th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="contractOrder" data-sort-type="number"><span>계약차수</span></th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="product" data-sort-type="string"><span>품목</span></th>
                             <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="amount" data-sort-type="number"><span>최종금액</span></th>
                         </tr>
@@ -468,7 +472,7 @@ function renderDetailTable() {
 
     const customerRawData = currentFilteredRawData.filter(item => item.customer === currentDetailCustomer);
 
-    // 상세는 취소건도 보여줌
+    // 상세 화면은 상쇄된 계약도 보여줌
     const detailData = buildContractSummary(customerRawData, true);
 
     sortData(detailData, sortStates.detail);
@@ -483,15 +487,11 @@ function renderDetailTable() {
     }
 
     detailData.forEach(item => {
-        let statusClass = 'text-gray-700';
-        if (item.status === '계약취소') statusClass = 'text-red-600 font-semibold';
-        if (item.status === '계약변경') statusClass = 'text-orange-600 font-semibold';
-
         tbody.innerHTML += `
             <tr>
                 <td class="px-4 py-3">${item.contractDate}</td>
                 <td class="px-4 py-3">${item.contractName}</td>
-                <td class="px-4 py-3 ${statusClass}">${item.status}</td>
+                <td class="px-4 py-3">${item.contractOrder}차</td>
                 <td class="px-4 py-3">${item.product}</td>
                 <td class="px-4 py-3 text-right">${CommonUtils.formatCurrency(item.amount)}</td>
             </tr>
