@@ -5,7 +5,7 @@ class PublicDataAPI {
     constructor() {
         this.apiKey = 'd39e9054120b8d222a53a74dfe83050102d6549c665cdae19efb9330b6451852';
         this.baseUrl = 'https://apis.data.go.kr/1230000/at/ShoppingMallPrdctInfoService/getSpcifyPrdlstPrcureInfoList';
-        this.cacheKey = 'cached2026ApiData_v7';
+        this.cacheKey = 'cached2026ApiData_v8';
 
         this.targetItems = [
             { code: '3012170206', name: '보행매트' },
@@ -33,9 +33,10 @@ class PublicDataAPI {
                 'cached2026ApiData_v4',
                 'cached2026ApiData_v5',
                 'cached2026ApiData_v6',
+                'cached2026ApiData_v7',
                 this.cacheKey
             ].forEach(key => sessionStorage.removeItem(key));
-        } catch (e) { }
+        } catch (e) {}
 
         if (!forceRefresh) {
             try {
@@ -45,7 +46,7 @@ class PublicDataAPI {
                     console.log(`[API 캐시 사용] ${parsed.length}건`);
                     return parsed;
                 }
-            } catch (e) { }
+            } catch (e) {}
         }
 
         console.log('[API 요청 시작] 2026년 데이터 조회');
@@ -77,7 +78,6 @@ class PublicDataAPI {
                             '0'
                         );
 
-                        // 취소/변경건은 incdecAmt 우선
                         const signedAmount = (
                             incdecAmt !== '' &&
                             incdecAmt !== '0' &&
@@ -109,7 +109,13 @@ class PublicDataAPI {
                                 row.prdctNm ||
                                 row.prcrmntDivNm ||
                                 '계약명 없음'
-                            ).trim()
+                            ).trim(),
+                            '계약차수': this.parseContractOrder(
+                                row.cntrctDlvrReqChgOrd ??
+                                row.cntrctChgOrd ??
+                                row.chgOrd ??
+                                1
+                            )
                         });
                     });
                 } catch (error) {
@@ -131,7 +137,7 @@ class PublicDataAPI {
 
         try {
             sessionStorage.setItem(this.cacheKey, JSON.stringify(deduped));
-        } catch (e) { }
+        } catch (e) {}
 
         console.log(`[API 최종 수집 완료] ${deduped.length}건`);
         return deduped;
@@ -279,6 +285,11 @@ class PublicDataAPI {
         return String(value ?? '0').replace(/[^\d.-]/g, '') || '0';
     }
 
+    parseContractOrder(value) {
+        const num = parseInt(String(value ?? '').replace(/[^\d]/g, ''), 10);
+        return Number.isNaN(num) || num <= 0 ? 1 : num;
+    }
+
     formatDate(rawDate) {
         if (!rawDate) return '';
         const d = String(rawDate).replace(/[^0-9]/g, '');
@@ -297,7 +308,8 @@ class PublicDataAPI {
                 row['업체'],
                 row['세부품명'],
                 row['공급금액'],
-                row['계약명']
+                row['계약명'],
+                row['계약차수']
             ].join('||');
 
             if (seen.has(key)) return false;
