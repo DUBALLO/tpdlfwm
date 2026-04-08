@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>재고 현황 - 판매실적 대시보드</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="../assets/css/common.css" rel="stylesheet">
+    <script src="../assets/js/sheets-api.js"></script>
+    <style>
+        /* 재고 관리 페이지 전용 스타일 - 테이블 가운데 정렬 */
+        .data-table th,
+        .data-table td {
+            text-align: center !important;
+        }
+    </style>
+</head>
+
+<body class="bg-gray-50">
+    <nav class="bg-white shadow-sm border-b no-print">
+        <div class="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
+            <a href="../index.html" class="text-lg font-semibold text-gray-900">← 대시보드로 돌아가기</a>
+            <span class="text-blue-600 font-medium text-lg">실시간 재고 현황</span>
+        </div>
+    </nav>
+
+    <main class="max-w-6xl mx-auto px-4 py-8">
+        <div class="bg-white rounded-lg shadow-md p-6 mb-8 no-print">
+            <div class="flex flex-wrap items-end gap-4">
+                <div>
+                    <label class="form-label">생산 제품</label>
+                    <select id="filterProductType" class="form-select w-40">
+                        <option value="보행매트">보행매트</option>
+                        <option value="식생매트">식생매트</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label">조회 연도</label>
+                    <select id="filterYear" class="form-select w-32">
+                        <option value="all">전체</option>
+                        <option value="2025">2025년</option>
+                        <option value="2026">2026년</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label">조회 월</label>
+                    <select id="filterMonth" class="form-select w-32">
+                        <option value="all">전체</option>
+                        <script>
+                            for (let i = 1; i <= 12; i++) document.write(`<option value="${i}">${i}월</option>`);
+                        </script>
+                    </select>
+                </div>
+                <button id="searchBtn" class="btn btn-primary">조회하기</button>
+                <button id="weeklyStatusBtn" class="btn btn-warning">생산 현황</button>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div class="bg-white rounded-lg shadow-md p-6 border-l-4 border-blue-500">
+                <p class="text-sm font-medium text-gray-500">선택 기간 생산량</p>
+                <p class="text-2xl font-bold text-gray-900" id="totalProd">-</p>
+            </div>
+            <div class="bg-white rounded-lg shadow-md p-6 border-l-4 border-red-500">
+                <p class="text-sm font-medium text-gray-500">선택 기간 출고량</p>
+                <p class="text-2xl font-bold text-gray-900" id="totalOut">-</p>
+            </div>
+            <div class="bg-white rounded-lg shadow-md p-6 border-l-4 border-green-500">
+                <p class="text-sm font-medium text-gray-500">기말 총 재고</p>
+                <p class="text-2xl font-bold text-gray-900" id="totalStock">-</p>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow-md overflow-hidden">
+            <table class="data-table w-full">
+                <thead>
+                    <tr>
+                        <th class="px-4 py-3 text-center cursor-pointer hover:bg-gray-100" onclick="sortTable('name')">
+                            품목명 (규격) <span id="sort-name" class="sort-icon"></span>
+                        </th>
+                        <th class="px-4 py-3 text-center cursor-pointer hover:bg-gray-100" onclick="sortTable('prod')">
+                            당월 생산 <span id="sort-prod" class="sort-icon"></span>
+                        </th>
+                        <th class="px-4 py-3 text-center cursor-pointer hover:bg-gray-100" onclick="sortTable('out')">
+                            당월 출고 <span id="sort-out" class="sort-icon"></span>
+                        </th>
+                        <th class="px-4 py-3 text-center bg-blue-50 cursor-pointer hover:bg-blue-100"
+                            onclick="sortTable('stock')">
+                            현재 재고 <span id="sort-stock" class="sort-icon"></span>
+                        </th>
+                    </tr>
+                </thead>
+                <tbody id="inventoryList">
+                    <tr>
+                        <td colspan="4" class="text-center py-8 text-gray-500">데이터를 불러오는 중...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </main>
+
+    <script src="../assets/js/common.js"></script>
+    <script src="../assets/js/inventory-management.js"></script>
+</body>
+
+</html>
