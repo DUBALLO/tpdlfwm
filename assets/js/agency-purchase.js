@@ -31,16 +31,18 @@ document.addEventListener('DOMContentLoaded', async () => {
 function setupEventListeners() {
     document.getElementById('analyzeBtn')?.addEventListener('click', () => runAnalysis());
 
-    document.getElementById('analysisYear')?.addEventListener('change', () => runAnalysis(true));
-    document.getElementById('productFilter')?.addEventListener('change', () => runAnalysis(true));
-    document.getElementById('agencyTypeFilter')?.addEventListener('change', () => runAnalysis(true));
+    // 필터 변경 시 상세 화면(있으면) 유지하고 데이터만 재집계.
+    // forceList=false → currentAgencyInDetailView 보존, runAnalysis가 showAgencyDetail 재호출.
+    document.getElementById('analysisYear')?.addEventListener('change', () => runAnalysis(false));
+    document.getElementById('productFilter')?.addEventListener('change', () => runAnalysis(false));
+    document.getElementById('agencyTypeFilter')?.addEventListener('change', () => runAnalysis(false));
 
     document.getElementById('regionFilter')?.addEventListener('change', () => {
         populateCityFilter();
-        runAnalysis(true);
+        runAnalysis(false);
     });
 
-    document.getElementById('cityFilter')?.addEventListener('change', () => runAnalysis(true));
+    document.getElementById('cityFilter')?.addEventListener('change', () => runAnalysis(false));
 
     document.getElementById('agencySearchFilter')?.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') runAnalysis();
@@ -766,6 +768,21 @@ function renderTrendDetail(agencyName) {
     const canvas = document.getElementById('trendChart');
     if (!canvas) return;
 
+    // 현재 상단 드롭다운에 선택된 연도 = 강조할 막대.
+    // '전체' 또는 5년 차트 범위 밖이면 전 막대 기본 색.
+    const selectedYearRaw = document.getElementById('analysisYear')?.value || 'all';
+    const selectedYearNum = selectedYearRaw === 'all' ? null : parseInt(selectedYearRaw, 10);
+    const isHighlightMode = selectedYearNum !== null && chartYears.includes(selectedYearNum);
+
+    const barBgColors = chartYears.map(year => {
+        if (!isHighlightMode) return 'rgba(16, 185, 129, 0.6)';
+        return year === selectedYearNum ? 'rgba(16, 185, 129, 0.95)' : 'rgba(16, 185, 129, 0.25)';
+    });
+    const barBorderColors = chartYears.map(year => {
+        if (!isHighlightMode) return 'rgba(16, 185, 129, 1)';
+        return year === selectedYearNum ? 'rgba(5, 150, 105, 1)' : 'rgba(16, 185, 129, 0.5)';
+    });
+
     const ctx = canvas.getContext('2d');
     chartInstance = new Chart(ctx, {
         type: 'bar',
@@ -774,14 +791,32 @@ function renderTrendDetail(agencyName) {
             datasets: [{
                 label: '연간 구매액',
                 data: chartYears.map(year => salesByYear[year]),
-                backgroundColor: 'rgba(16, 185, 129, 0.6)',
-                borderColor: 'rgba(16, 185, 129, 1)',
+                backgroundColor: barBgColors,
+                borderColor: barBorderColors,
                 borderWidth: 1
             }]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            // 막대 클릭 = 상단 드롭다운 값 변경 + 상세 화면 유지하며 재집계
+            onClick: (evt, elements) => {
+                if (!elements || elements.length === 0) return;
+                const idx = elements[0].index;
+                const clickedYear = chartYears[idx];
+                if (clickedYear == null) return;
+                const yearFilter = document.getElementById('analysisYear');
+                if (!yearFilter) return;
+                // 같은 연도 다시 클릭하면 '전체'로 토글, 아니면 그 해로 변경
+                yearFilter.value = (selectedYearNum === clickedYear) ? 'all' : String(clickedYear);
+                runAnalysis(false);
+            },
+            onHover: (evt, elements) => {
+                const target = evt?.native?.target;
+                if (target && target.style) {
+                    target.style.cursor = elements && elements.length > 0 ? 'pointer' : 'default';
+                }
+            },
             scales: {
                 y: {
                     beginAtZero: true,
@@ -798,6 +833,10 @@ function renderTrendDetail(agencyName) {
                             const amount = context.parsed.y;
                             const count = countByYear[year] || 0;
                             return [`구매액: ${CommonUtils.formatCurrency(amount)}`, `유효계약수: ${count}건`];
+                        },
+                        afterLabel: function (context) {
+                            const year = parseInt(context.label, 10);
+                            return year === selectedYearNum ? '✓ 현재 선택' : '클릭하여 전환';
                         }
                     }
                 }
