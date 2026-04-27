@@ -7,6 +7,10 @@ let currentFilteredData = [];     // 현재 필터 적용 + 계약 기준 집계
 let chartInstance = null;
 let currentAgencyInDetailView = null;
 
+// 기관 상세 화면의 섹션 펼침 상태. 차트 클릭/필터 변경으로 재렌더돼도 유지.
+// 기본값: 둘 다 펼쳐서 첫 진입에서 바로 차트·표 보이게.
+let detailSectionsExpanded = { trend: true, contract: true };
+
 let sortStates = {
     rank: { key: 'amount', direction: 'desc', type: 'number' },
     purchase: { key: 'amount', direction: 'desc', type: 'number' },
@@ -248,6 +252,9 @@ function populateFilters(data) {
     if (regionFilter.querySelector('option[value="경기도"]')) {
         regionFilter.value = '경기도';
     }
+    if (agencyTypeFilter.querySelector('option[value="지방정부"]')) {
+        agencyTypeFilter.value = '지방정부';
+    }
 
     populateCityFilter();
 }
@@ -437,7 +444,7 @@ function showAgencyDetail(agencyName) {
             <div class="flex justify-between items-center mb-4">
                 <h3 class="text-xl font-bold text-gray-900">${agencyName} 분석 보고서 (${selectedYearText})</h3>
                 <div class="flex items-center space-x-2 no-print">
-                    <button id="toggleAllBtn" class="btn btn-secondary btn-sm">전체 펼치기</button>
+                    <button id="toggleAllBtn" class="btn btn-secondary btn-sm">${(detailSectionsExpanded.trend && detailSectionsExpanded.contract) ? '전체 접기' : '전체 펼치기'}</button>
                     <button id="printDetailBtn" class="btn btn-secondary btn-sm">보고서 인쇄</button>
                     <button id="backToListBtn" class="btn btn-secondary btn-sm">목록으로</button>
                 </div>
@@ -448,18 +455,18 @@ function showAgencyDetail(agencyName) {
             <div class="mt-12 no-print">
                 <button id="toggleTrendBtn" class="w-full text-left p-3 bg-gray-100 hover:bg-gray-200 rounded-md flex justify-between items-center">
                     <span class="font-semibold">연도별 추이</span>
-                    <span class="toggle-icon">▼</span>
+                    <span class="toggle-icon">${detailSectionsExpanded.trend ? '▲' : '▼'}</span>
                 </button>
             </div>
-            <div id="trendDetail" class="mt-4 hidden report-section"></div>
+            <div id="trendDetail" class="mt-4 ${detailSectionsExpanded.trend ? '' : 'hidden'} report-section"></div>
 
             <div class="mt-4 no-print">
                 <button id="toggleContractBtn" class="w-full text-left p-3 bg-gray-100 hover:bg-gray-200 rounded-md flex justify-between items-center">
                     <span class="font-semibold">계약 상세</span>
-                    <span class="toggle-icon">▼</span>
+                    <span class="toggle-icon">${detailSectionsExpanded.contract ? '▲' : '▼'}</span>
                 </button>
             </div>
-            <div id="contractDetail" class="mt-4 hidden report-section"></div>
+            <div id="contractDetail" class="mt-4 ${detailSectionsExpanded.contract ? '' : 'hidden'} report-section"></div>
         </div>
     `;
 
@@ -475,13 +482,19 @@ function showAgencyDetail(agencyName) {
         contract: { btn: 'toggleContractBtn', content: 'contractDetail' }
     };
 
-    Object.values(sections).forEach(({ btn, content }) => {
+    Object.entries(sections).forEach(([key, { btn, content }]) => {
         document.getElementById(btn)?.addEventListener('click', (e) => {
             const contentEl = document.getElementById(content);
             const iconEl = e.currentTarget.querySelector('.toggle-icon');
             contentEl?.classList.toggle('hidden');
-            if (iconEl && contentEl) {
-                iconEl.textContent = contentEl.classList.contains('hidden') ? '▼' : '▲';
+            const isHidden = contentEl?.classList.contains('hidden');
+            if (iconEl) iconEl.textContent = isHidden ? '▼' : '▲';
+            detailSectionsExpanded[key] = !isHidden;
+            // 전체 버튼 텍스트도 동기화
+            const allBtn = document.getElementById('toggleAllBtn');
+            if (allBtn) {
+                allBtn.textContent = (detailSectionsExpanded.trend && detailSectionsExpanded.contract)
+                    ? '전체 접기' : '전체 펼치기';
             }
         });
     });
@@ -490,10 +503,11 @@ function showAgencyDetail(agencyName) {
     toggleAllBtn?.addEventListener('click', () => {
         const isExpanding = toggleAllBtn.textContent === '전체 펼치기';
 
-        Object.values(sections).forEach(({ btn, content }) => {
+        Object.entries(sections).forEach(([key, { btn, content }]) => {
             document.getElementById(content)?.classList.toggle('hidden', !isExpanding);
             const icon = document.getElementById(btn)?.querySelector('.toggle-icon');
             if (icon) icon.textContent = isExpanding ? '▲' : '▼';
+            detailSectionsExpanded[key] = isExpanding;
         });
 
         toggleAllBtn.textContent = isExpanding ? '전체 접기' : '전체 펼치기';
