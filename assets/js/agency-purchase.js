@@ -139,7 +139,11 @@ async function loadAndParseData() {
                 product: (item['세부품명'] || '').trim(),
                 supplier: (item['업체'] || '').trim(),
                 rawAmount: String(item['공급금액'] ?? '').trim(),
-                contractOrder: parseContractOrder(item)
+                contractOrder: parseContractOrder(item),
+                fullProductName: (item['물품식별명'] || '').trim(),
+                quantity: parseSignedAmount(item['계약납품수량']),
+                unitPrice: parseSignedAmount(item['계약납품단가']),
+                contractMethod: (item['계약방법'] || '').trim()
             };
         })
         .filter(item =>
@@ -182,7 +186,8 @@ function buildContractSummary(data, includeZeroAmount = false) {
                 firstContractDate: item.date,
                 latestContractDate: item.date,
                 lineCount: 0,
-                contractOrder: item.contractOrder || 1
+                contractOrder: item.contractOrder || 1,
+                lineItems: []
             });
         }
 
@@ -190,6 +195,15 @@ function buildContractSummary(data, includeZeroAmount = false) {
 
         summary.amount += Number(item.amount) || 0;
         summary.lineCount += 1;
+        summary.lineItems.push({
+            fullProductName: item.fullProductName || '',
+            product: item.product || '',
+            quantity: Number(item.quantity) || 0,
+            unitPrice: Number(item.unitPrice) || 0,
+            amount: Number(item.amount) || 0,
+            contractMethod: item.contractMethod || '',
+            date: item.date || ''
+        });
 
         if ((item.contractOrder || 1) > summary.contractOrder) {
             summary.contractOrder = item.contractOrder || 1;
@@ -592,7 +606,6 @@ function renderContractDetail(agencyRawData) {
                     <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="rank" data-sort-type="number"><span>순번</span></th>
                     <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="contractDate" data-sort-type="string"><span>최종일자</span></th>
                     <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="contractName" data-sort-type="string"><span>계약명</span></th>
-                    <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="contractOrder" data-sort-type="number"><span>계약차수</span></th>
                     <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="supplier" data-sort-type="string"><span>업체명</span></th>
                     <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="amount" data-sort-type="number"><span>최종금액</span></th>
                 </tr>
@@ -610,18 +623,25 @@ function renderContractDetail(agencyRawData) {
     tbody.innerHTML = '';
 
     if (data.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="6" class="px-4 py-8 text-center text-gray-500">표시할 데이터가 없습니다.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="5" class="px-4 py-8 text-center text-gray-500">표시할 데이터가 없습니다.</td></tr>`;
     } else {
-        data.forEach(item => {
+        data.forEach((item, idx) => {
             const row = tbody.insertRow();
             row.innerHTML = `
                 <td class="px-4 py-3 text-center">${item.rank}</td>
                 <td class="px-4 py-3 text-center">${item.contractDate}</td>
-                <td class="px-4 py-3">${item.contractName}</td>
-                <td class="px-4 py-3 text-center">${item.contractOrder}차</td>
+                <td class="px-4 py-3"><a href="#" class="text-blue-600 hover:underline contract-name-link" data-idx="${idx}">${item.contractName}</a></td>
                 <td class="px-4 py-3">${item.supplier}</td>
                 <td class="px-4 py-3 text-right font-medium whitespace-nowrap">${CommonUtils.formatCurrency(item.amount)}</td>
             `;
+        });
+
+        tbody.querySelectorAll('.contract-name-link').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                const idx = Number(link.dataset.idx);
+                showContractItemsPopup(data[idx]);
+            });
         });
     }
 
@@ -634,6 +654,60 @@ function renderContractDetail(agencyRawData) {
         handleTableSort('contract', th.dataset.sortKey, th.dataset.sortType);
         renderContractDetail(agencyRawData);
     });
+}
+
+// 물품식별명 파싱: "세부품명, 업체단축명, 모델, 규격..." 구조 가정.
+// parts[0]==세부품명은 전수 검증 완료(54,581건 mismatch 0). 1/3-part는 통짜 또는 모델만.
+function parseProductIdentName(fullName) {
+    const raw = String(fullName || '').trim();
+    if (!raw) return { model: '-', spec: '-', raw: '' };
+    const parts = raw.split(',').map(s => s.trim()).filter(Boolean);
+    const n = parts.length;
+    if (n >= 4) return { model: parts[2], spec: parts.slice(3).join(', '), raw };
+    if (n === 3) return { model: parts[2], spec: '-', raw };
+    if (n === 2) return { model: '-', spec: parts[1], raw };
+    return { model: '-', spec: '-', raw }; // 통짜(수의계약 일부) — raw 표시 fallback
+}
+
+function showContractItemsPopup(summary) {
+    if (!summary) return;
+    const items = Array.isArray(summary.lineItems) ? summary.lineItems : [];
+
+    let contentHtml = `<p class="text-sm text-gray-600 mb-3">
+        <span class="font-medium">${summary.agency}</span> · ${summary.supplier} ·
+        총 ${items.length}개 라인 · 합계 ${CommonUtils.formatCurrency(summary.amount)}
+    </p>`;
+
+    if (items.length === 0) {
+        contentHtml += '<p class="text-center text-gray-500 py-4">이 계약에는 등록된 품목 정보가 없습니다.</p>';
+    } else {
+        contentHtml += `<div class="overflow-x-auto"><table class="w-full text-sm text-left">
+            <thead class="bg-gray-50"><tr>
+                <th class="p-2">모델</th>
+                <th class="p-2">규격</th>
+                <th class="p-2 text-right">수량</th>
+                <th class="p-2 text-right">단가</th>
+                <th class="p-2 text-right">합계액</th>
+            </tr></thead><tbody>`;
+
+        const sorted = [...items].sort((a, b) => (b.amount || 0) - (a.amount || 0));
+        sorted.forEach(line => {
+            const { model, spec, raw } = parseProductIdentName(line.fullProductName);
+            const specCell = (spec === '-' && raw)
+                ? `<span class="text-gray-500" title="원본">${raw}</span>`
+                : spec;
+            contentHtml += `<tr class="border-b">
+                <td class="p-2 whitespace-nowrap">${model}</td>
+                <td class="p-2">${specCell}</td>
+                <td class="p-2 text-right">${CommonUtils.formatNumber(line.quantity) || '-'}</td>
+                <td class="p-2 text-right">${line.unitPrice ? CommonUtils.formatCurrency(line.unitPrice) : '-'}</td>
+                <td class="p-2 text-right font-medium">${CommonUtils.formatCurrency(line.amount)}</td>
+            </tr>`;
+        });
+        contentHtml += '</tbody></table></div>';
+    }
+
+    CommonUtils.showModal(`'${summary.contractName}' 품목 상세 내역`, contentHtml, { width: '900px' });
 }
 
 function renderTrendDetail(agencyName) {

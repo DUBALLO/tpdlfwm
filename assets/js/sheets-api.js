@@ -61,6 +61,8 @@ class SheetsAPI {
         console.log(`[시트 2026 제거] 제거 건수: ${removed2026Count}건`);
         console.log(`[시트 합계] 2025년 이하 데이터: ${combinedHistoricalData.length}건`);
 
+        combinedHistoricalData = this.pickFinalRevisionPerContract(combinedHistoricalData, '[시트]');
+
         let apiData2026 = [];
 
         if (window.publicDataAPI && typeof window.publicDataAPI.fetch2026Data === 'function') {
@@ -122,6 +124,59 @@ class SheetsAPI {
 
         const csvText = await response.text();
         return this.parseCSV(csvText);
+    }
+
+    // 같은 (계약납품통합번호, 업체사업자등록번호, 계약납품요구물품순번) 그룹에서
+    // 변경차수 최대 1건만 채택. 동점 시 최종계약납품요구여부 'Y' 우선.
+    // 그룹 키가 비어있는 행은 dedup 대상에서 제외하고 그대로 통과시킨다.
+    pickFinalRevisionPerContract(rows, tag = '[정합성]') {
+        const grouped = new Map();
+        const ungrouped = [];
+        let groupedInputCount = 0;
+        let collapsedCount = 0;
+
+        const parseOrd = (v) => {
+            const n = parseInt(String(v ?? '').replace(/[^\d]/g, ''), 10);
+            return Number.isNaN(n) ? 0 : n;
+        };
+
+        for (const row of rows) {
+            const dlvrReqNo = String(row['계약납품통합번호'] ?? '').trim();
+            const bizno = String(row['업체사업자등록번호'] ?? '').trim();
+            const prdctSno = String(row['계약납품요구물품순번'] ?? '').trim();
+
+            if (!dlvrReqNo || !bizno || !prdctSno) {
+                ungrouped.push(row);
+                continue;
+            }
+
+            groupedInputCount++;
+            const key = `${dlvrReqNo}|${bizno}|${prdctSno}`;
+            const incumbent = grouped.get(key);
+
+            if (!incumbent) {
+                grouped.set(key, row);
+                continue;
+            }
+
+            collapsedCount++;
+
+            const curOrd = parseOrd(row['계약납품통합변경차수']);
+            const incOrd = parseOrd(incumbent['계약납품통합변경차수']);
+            const curIsFinal = String(row['최종계약납품요구여부'] ?? '').toUpperCase() === 'Y';
+            const incIsFinal = String(incumbent['최종계약납품요구여부'] ?? '').toUpperCase() === 'Y';
+
+            const replace = curOrd > incOrd || (curOrd === incOrd && curIsFinal && !incIsFinal);
+            if (replace) grouped.set(key, row);
+        }
+
+        console.log(
+            `${tag} 정합성 dedup: 입력=${rows.length}건, 그룹대상=${groupedInputCount}건, ` +
+            `최종 그룹수=${grouped.size}건, 이중계상 제거=${collapsedCount}건, ` +
+            `키 결손 통과=${ungrouped.length}건`
+        );
+
+        return [...grouped.values(), ...ungrouped];
     }
 
     parseCSVLine(line) {

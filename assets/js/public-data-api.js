@@ -68,21 +68,18 @@ class PublicDataAPI {
                     );
 
                     result.items.forEach(row => {
-                        const incdecAmt = this.normalizeSignedNumber(row.incdecAmt ?? '');
-                        const baseAmt = this.normalizeSignedNumber(
+                        // 그룹별 max 변경차수 1건만 dedup으로 채택하므로,
+                        // 공급금액은 누적 최종값(prdctAmt)을 써야 한다.
+                        // incdecAmt는 변경 델타라 dedup 후 단독으로 쓰면 음수 잔존.
+                        const signedAmount = this.normalizeSignedNumber(
                             row.prdctAmt ??
                             row.orderCalclPrceAmt ??
                             row.cntrctPrceAmt ??
                             row.suplyAmt ??
                             row.amt ??
+                            row.incdecAmt ??
                             '0'
                         );
-
-                        const signedAmount = (
-                            incdecAmt !== '' &&
-                            incdecAmt !== '0' &&
-                            incdecAmt !== '-0'
-                        ) ? incdecAmt : baseAmt;
 
                         allRows.push({
                             '수요기관명': (row.dminsttNm || row.dmndInsttNm || '').trim(),
@@ -115,7 +112,17 @@ class PublicDataAPI {
                                 row.cntrctChgOrd ??
                                 row.chgOrd ??
                                 1
-                            )
+                            ),
+                            '계약방법': (row.cntrctMthdNm || '').trim(),
+                            '물품식별번호': String(row.prdctIdntNo ?? '').trim(),
+                            '물품식별명': (row.prdctIdntNoNm || row.prdctIdntNm || '').trim(),
+                            '계약납품수량': this.normalizeSignedNumber(row.prdctQty ?? row.cntrctDlvrQty ?? ''),
+                            '계약납품단가': this.normalizeSignedNumber(row.prdctUprc ?? row.cntrctDlvrUprc ?? ''),
+                            '계약납품통합번호': String(row.cntrctDlvrReqNo ?? '').trim(),
+                            '업체사업자등록번호': String(row.bizno ?? row.bizrno ?? row.corpRegNo ?? '').trim(),
+                            '계약납품요구물품순번': String(row.prdctSno ?? '').trim(),
+                            '계약납품통합변경차수': String(row.cntrctDlvrReqChgOrd ?? row.cntrctChgOrd ?? row.chgOrd ?? '').trim(),
+                            '최종계약납품요구여부': String(row.fnlCntrctDlvrReqChgOrdYn ?? row.cntrctFnlYn ?? row.fnlCntrctYn ?? '').trim().toUpperCase()
                         });
                     });
                 } catch (error) {
@@ -133,7 +140,7 @@ class PublicDataAPI {
             !Number.isNaN(Number(row['공급금액']))
         );
 
-        const deduped = this.dedupeRows(allRows);
+        const deduped = this.pickFinalRevisionPerContract(allRows, '[API]');
 
         try {
             sessionStorage.setItem(this.cacheKey, JSON.stringify(deduped));
@@ -299,23 +306,57 @@ class PublicDataAPI {
         return String(rawDate);
     }
 
-    dedupeRows(rows) {
-        const seen = new Set();
-        return rows.filter(row => {
-            const key = [
-                row['기준일자'],
-                row['수요기관명'],
-                row['업체'],
-                row['세부품명'],
-                row['공급금액'],
-                row['계약명'],
-                row['계약차수']
-            ].join('||');
+    // 같은 (계약납품통합번호, 업체사업자등록번호, 계약납품요구물품순번) 그룹에서
+    // 변경차수 최대 1건만 채택. 동점 시 최종계약납품요구여부 'Y' 우선.
+    // 그룹 키가 비어있는 행은 dedup 대상에서 제외하고 그대로 통과시킨다.
+    pickFinalRevisionPerContract(rows, tag = '[정합성]') {
+        const grouped = new Map();
+        const ungrouped = [];
+        let groupedInputCount = 0;
+        let collapsedCount = 0;
 
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-        });
+        const parseOrd = (v) => {
+            const n = parseInt(String(v ?? '').replace(/[^\d]/g, ''), 10);
+            return Number.isNaN(n) ? 0 : n;
+        };
+
+        for (const row of rows) {
+            const dlvrReqNo = String(row['계약납품통합번호'] ?? '').trim();
+            const bizno = String(row['업체사업자등록번호'] ?? '').trim();
+            const prdctSno = String(row['계약납품요구물품순번'] ?? '').trim();
+
+            if (!dlvrReqNo || !bizno || !prdctSno) {
+                ungrouped.push(row);
+                continue;
+            }
+
+            groupedInputCount++;
+            const key = `${dlvrReqNo}|${bizno}|${prdctSno}`;
+            const incumbent = grouped.get(key);
+
+            if (!incumbent) {
+                grouped.set(key, row);
+                continue;
+            }
+
+            collapsedCount++;
+
+            const curOrd = parseOrd(row['계약납품통합변경차수']);
+            const incOrd = parseOrd(incumbent['계약납품통합변경차수']);
+            const curIsFinal = String(row['최종계약납품요구여부'] ?? '').toUpperCase() === 'Y';
+            const incIsFinal = String(incumbent['최종계약납품요구여부'] ?? '').toUpperCase() === 'Y';
+
+            const replace = curOrd > incOrd || (curOrd === incOrd && curIsFinal && !incIsFinal);
+            if (replace) grouped.set(key, row);
+        }
+
+        console.log(
+            `${tag} 정합성 dedup: 입력=${rows.length}건, 그룹대상=${groupedInputCount}건, ` +
+            `최종 그룹수=${grouped.size}건, 이중계상 제거=${collapsedCount}건, ` +
+            `키 결손 통과=${ungrouped.length}건`
+        );
+
+        return [...grouped.values(), ...ungrouped];
     }
 }
 

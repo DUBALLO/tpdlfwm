@@ -1,0 +1,19 @@
+# Claude Code 세션/설정 (개인 환경, 공유 안 함)
+.claude/
+
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 에디터 임시
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# 노드 (혹시 나중에 빌드 도구 쓸 경우 대비)
+node_modules/
+
+# 로그
+*.log
