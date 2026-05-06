@@ -129,19 +129,12 @@ function populateYearFilter() {
     sel.innerHTML = '<option value="all">전체</option>' + years.map(y => `<option value="${y}">${y}년</option>`).join('');
 }
 
-// 정렬 상태: 배열로 유지하여 다중 정렬 지원
-const DEFAULT_SORT = [
+// 정렬 상태: 빈 배열 = 활성 정렬 없음. compareRecords에서 fallback 정렬 적용
+let sortStack = [];
+const FALLBACK_SORT = [
     { key: '년도', dir: 'desc' },
-    { key: '구분', dir: 'desc' },
-    { key: '수요기관명', dir: 'desc' },
-    { key: '계약명', dir: 'asc' }
+    { key: '수요기관명', dir: 'asc' }
 ];
-let sortStack = DEFAULT_SORT.map(s => ({ ...s }));
-
-function isDefaultSort() {
-    if (sortStack.length !== DEFAULT_SORT.length) return false;
-    return sortStack.every((s, i) => s.key === DEFAULT_SORT[i].key && s.dir === DEFAULT_SORT[i].dir);
-}
 
 const GUBUN_ORDER = { '군': 1, '지방정부': 2, '공기업': 3, '국가기관': 4, '교육기관': 5, '사급': 6 };
 
@@ -154,7 +147,7 @@ function valueFor(r, key) {
 }
 
 function compareRecords(a, b) {
-    const stack = sortStack.length ? sortStack : DEFAULT_SORT;
+    const stack = sortStack.length ? sortStack : FALLBACK_SORT;
     for (const { key, dir } of stack) {
         const va = valueFor(a, key);
         const vb = valueFor(b, key);
@@ -190,7 +183,7 @@ function toggleSort(key) {
 }
 
 function clearSort() {
-    sortStack = DEFAULT_SORT.map(s => ({ ...s }));
+    sortStack = [];
     applyFilters();
 }
 
@@ -213,9 +206,9 @@ function updateSortIndicators() {
             ind.classList.add('text-gray-300');
         }
     });
-    // 기본 정렬 버튼: 디폴트와 다를 때만 표시
+    // 정렬 초기화 버튼: 활성 정렬 있을 때만 표시
     const clr = document.getElementById('clearSortBtn');
-    if (clr) clr.style.display = isDefaultSort() ? 'none' : '';
+    if (clr) clr.style.display = sortStack.length > 0 ? '' : 'none';
 }
 
 const GUBUN_BADGE = {

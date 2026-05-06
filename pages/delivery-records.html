@@ -9,7 +9,7 @@
     <link rel="apple-touch-icon" href="/icons/icon-192.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="../assets/css/common.css" rel="stylesheet">
-    <script src="../assets/js/sheets-api.js?v=20260506f"></script>
+    <script src="../assets/js/sheets-api.js?v=20260506g"></script>
     <style>
         body { font-family: 'Noto Sans KR', system-ui, sans-serif; }
         .badge { display: inline-block; padding: 2px 8px; border-radius: 9999px; font-size: 11px; font-weight: 500; }
@@ -85,7 +85,7 @@
                 </div>
                 <div class="ml-auto flex gap-2">
                     <button id="clearSortBtn" style="display:none;" class="px-3 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 text-sm">
-                        기본 정렬
+                        정렬 초기화
                     </button>
                     <button id="printBtn" class="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 text-sm font-medium">
                         🖨 인쇄 / PDF 저장
@@ -117,8 +117,8 @@
         </div>
     </footer>
 
-    <script src="../assets/js/common.js?v=20260506f"></script>
-    <script src="../assets/js/delivery-records.js?v=20260506f"></script>
+    <script src="../assets/js/common.js?v=20260506g"></script>
+    <script src="../assets/js/delivery-records.js?v=20260506g"></script>
     <script>
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('/service-worker.js').catch(() => {});
