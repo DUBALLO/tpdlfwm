@@ -1,7 +1,7 @@
 // Service Worker for PWA
 // 캐시 정책: 네트워크 우선 + HTTP 캐시 우회(no-store), 오프라인 폴백 전용 캐시.
 // SW가 옛 HTML을 잡아서 새 JS가 안 들어오는 사고 방지용.
-const CACHE_NAME = 'dashboard-v5';
+const CACHE_NAME = 'dashboard-v9';
 const urlsToCache = [
   '/index.html',
   '/pages/agency-purchase.html',
@@ -10,6 +10,7 @@ const urlsToCache = [
   '/pages/trend-analysis.html',
   '/pages/monthly-sales.html',
   '/pages/inventory-management.html',
+  '/pages/delivery-records.html',
   '/assets/css/common.css',
   '/assets/js/common.js',
   '/assets/js/public-data-api.js',
@@ -19,7 +20,8 @@ const urlsToCache = [
   '/assets/js/customer-analysis.js',
   '/assets/js/trend-analysis.js',
   '/assets/js/monthly-sales.js',
-  '/assets/js/inventory-management.js'
+  '/assets/js/inventory-management.js',
+  '/assets/js/delivery-records.js'
 ];
 
 // 설치: 즉시 활성화하도록 waiting 단계 건너뛰기
