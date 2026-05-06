@@ -79,13 +79,15 @@ async function loadDeliveryRecords() {
             const 거래처 = String(item['거래처'] || '').trim();
             const 계약명_원본 = String(item['계약명'] || '').trim();
             if (!거래처 || !계약명_원본) continue;
+            const 구분 = classifyGubun(거래처);
+            if (구분 === '사급') continue; // 사급 제외 (관급 납품실적 노출용)
             const 계약명_정규 = normalizeContractName(계약명_원본);
             const key = `${거래처}||${계약명_정규}`;
             const year = invoiceDate.getFullYear();
             if (!groups.has(key)) {
                 groups.set(key, {
                     년도: year,
-                    구분: classifyGubun(거래처),
+                    구분: 구분,
                     수요기관명: 거래처,
                     계약명: 계약명_정규,
                     _firstDate: invoiceDate
@@ -127,8 +129,19 @@ function populateYearFilter() {
     sel.innerHTML = '<option value="all">전체</option>' + years.map(y => `<option value="${y}">${y}년</option>`).join('');
 }
 
-// 정렬 상태: 배열로 유지하여 다중 정렬 지원. 빈 배열 = 기본(년도 내림 + 수요기관명 가나다)
-let sortStack = [];
+// 정렬 상태: 배열로 유지하여 다중 정렬 지원
+const DEFAULT_SORT = [
+    { key: '년도', dir: 'desc' },
+    { key: '구분', dir: 'desc' },
+    { key: '수요기관명', dir: 'desc' },
+    { key: '계약명', dir: 'asc' }
+];
+let sortStack = DEFAULT_SORT.map(s => ({ ...s }));
+
+function isDefaultSort() {
+    if (sortStack.length !== DEFAULT_SORT.length) return false;
+    return sortStack.every((s, i) => s.key === DEFAULT_SORT[i].key && s.dir === DEFAULT_SORT[i].dir);
+}
 
 const GUBUN_ORDER = { '군': 1, '지방정부': 2, '공기업': 3, '국가기관': 4, '교육기관': 5, '사급': 6 };
 
@@ -141,7 +154,7 @@ function valueFor(r, key) {
 }
 
 function compareRecords(a, b) {
-    const stack = sortStack.length ? sortStack : [{ key: '년도', dir: 'desc' }, { key: '수요기관명', dir: 'asc' }];
+    const stack = sortStack.length ? sortStack : DEFAULT_SORT;
     for (const { key, dir } of stack) {
         const va = valueFor(a, key);
         const vb = valueFor(b, key);
@@ -177,7 +190,7 @@ function toggleSort(key) {
 }
 
 function clearSort() {
-    sortStack = [];
+    sortStack = DEFAULT_SORT.map(s => ({ ...s }));
     applyFilters();
 }
 
@@ -200,9 +213,9 @@ function updateSortIndicators() {
             ind.classList.add('text-gray-300');
         }
     });
-    // 정렬 초기화 버튼 표시 토글
+    // 기본 정렬 버튼: 디폴트와 다를 때만 표시
     const clr = document.getElementById('clearSortBtn');
-    if (clr) clr.style.display = sortStack.length > 0 ? '' : 'none';
+    if (clr) clr.style.display = isDefaultSort() ? 'none' : '';
 }
 
 const GUBUN_BADGE = {
