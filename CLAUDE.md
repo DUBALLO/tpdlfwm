@@ -27,17 +27,13 @@
 - 두 소스는 `loadAllProcurementData()`에서 concat
 - 4개 분석 페이지(agency-purchase, customer-analysis, supplier-ranking, trend-analysis)가 이걸 공유
 
-## Cowork 전용 데이터 허브
+## Cowork 데이터 허브 (별도 폴더)
 
-PWA와 별개로 `cowork-hub/snapshot.json`에 모든 데이터(시트 5개 + 2026 API)를 통합 스냅샷으로 박아둠. Cowork에서 회사 숫자 질문이 오면 그걸 사용.
+대시보드 데이터(시트 5개 + 2026 API)의 Cowork 세션용 통합 스냅샷은 **`../05_cowork-hub/`** 에 분리해둠. PWA 동작과 무관 (배포 영향 없음).
 
-- **갱신**: `py cowork-hub/hub.py` (10~30초)
-- **키**: `coirmat` / `vegetation` / `nonslip` / `manualSales` / `production`
-- **조달 키 3개**는 `rows`(라인 단위) + `contracts`(계약 단위, 0원 상쇄 제외)를 모두 가짐.
-  - **거시 집계는 반드시 `contracts` 사용** — PWA 표 숫자와 동일. `rows`로 단순 합산 시 라인 중복 + 0원 계약 포함되어 틀림.
-  - 품목 디테일은 `rows` 또는 `contracts[].lineItems`
-- **사용법**: 99MB라 Read 금지. `py -c "import json; ..."`로 쿼리만. 자세한 건 [cowork-hub/README.md](cowork-hub/README.md)
-- 폴더 자체가 git 무시 처리됨 (Cloudflare 배포 영향 없음)
+- 회사 숫자 질문 → 거기 `snapshot.json`을 쿼리해서 답함
+- **반드시 `contracts` 사용** (라인 단위 `rows` 합산 시 PWA 표 숫자와 안 맞음)
+- 자세한 사용 규칙·갱신·새 데이터 추가법은 `../05_cowork-hub/CLAUDE.md` + `README.md`
 
 ## ⚠️ 핵심 규칙 1 — 정합성 dedup (이중계상 방지)
 
