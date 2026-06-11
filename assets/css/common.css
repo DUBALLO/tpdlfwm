@@ -117,8 +117,21 @@ body { font-family: 'Noto Sans KR', sans-serif; line-height: 1.6; color: #374151
     border-radius: 0.5rem;
     box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
     width: 90%;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
     transform: scale(0.95);
     transition: transform 0.3s ease;
+}
+
+.modal-content > .flex {
+    flex-shrink: 0;
+}
+
+.modal-content .modal-body {
+    overflow-y: auto;
+    flex: 1 1 auto;
+    min-height: 0;
 }
 
 .modal-overlay.active .modal-content {

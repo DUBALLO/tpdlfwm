@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>주문 관리 - 두발로 대시보드</title>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#10b981">
+    <link rel="apple-touch-icon" href="/icons/icon-192.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="../assets/css/common.css" rel="stylesheet">
+    <style>
+        body { font-family: 'Noto Sans KR', sans-serif; }
+        .kanban { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; }
+        @media (max-width: 1024px) {
+            .kanban { grid-template-columns: repeat(2, 1fr); }
+        }
+        @media (max-width: 640px) {
+            .kanban { grid-template-columns: 1fr; }
+        }
+
+        /* 배송 완료 리스트 */
+        .completed-list { margin-top: 1.5rem; background: white; border-radius: 0.5rem; padding: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+        .completed-list h3 { font-weight: 600; font-size: 0.875rem; color: #374151; margin-bottom: 0.5rem; }
+        .completed-list table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
+        .completed-list th { background: #f3f4f6; padding: 0.5rem; text-align: left; font-weight: 600; color: #4b5563; font-size: 0.75rem; border-bottom: 1px solid #d1d5db; }
+        .completed-list td { padding: 0.5rem; border-bottom: 1px solid #f3f4f6; }
+        .completed-list tr { cursor: pointer; }
+        .completed-list tr:hover { background: #f9fafb; }
+        .completed-list .empty { text-align: center; color: #9ca3af; padding: 1rem; font-size: 0.8125rem; }
+        .kanban-col { background: #f3f4f6; border-radius: 0.5rem; padding: 0.75rem; min-height: 50vh; }
+        .kanban-col h3 { font-weight: 600; font-size: 0.875rem; margin-bottom: 0.75rem; color: #374151; display: flex; justify-content: space-between; align-items: center; }
+        .kanban-col h3 .count { background: #e5e7eb; color: #6b7280; border-radius: 9999px; padding: 0.125rem 0.5rem; font-size: 0.75rem; margin-left: 0.25rem; }
+        .kanban-col h3 .col-actions { display: flex; align-items: center; gap: 0.25rem; }
+        .kanban-col h3 .col-add-btn { background: #3b82f6; color: white; border: none; border-radius: 0.25rem; padding: 0.15rem 0.5rem; font-size: 0.75rem; cursor: pointer; font-weight: 600; }
+        .kanban-col h3 .col-add-btn:hover { background: #2563eb; }
+        .kanban-col h3 .col-add-btn:disabled { background: #d1d5db; cursor: not-allowed; }
+        .deal-card { background: white; border-radius: 0.375rem; padding: 0.75rem; margin-bottom: 0.5rem; cursor: pointer; border-left: 3px solid #d1d5db; box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: all 0.15s; }
+        .deal-card:hover { box-shadow: 0 4px 8px rgba(0,0,0,0.08); transform: translateY(-1px); }
+        .deal-card.nature-g { border-left-color: #3b82f6; }
+        .deal-card.nature-b { border-left-color: #10b981; }
+        .deal-card.nature-c { border-left-color: #8b5cf6; }
+        .deal-card.nature-nonsale { border-left-color: #9ca3af; }
+        .deal-card .deal-num { font-family: 'Courier New', monospace; font-size: 0.75rem; color: #6b7280; }
+        .deal-card .deal-org { font-weight: 600; font-size: 0.875rem; margin-top: 0.25rem; color: #111827; }
+        .deal-card .deal-name { font-size: 0.75rem; color: #6b7280; margin-top: 0.125rem; line-height: 1.3; max-height: 2.6em; overflow: hidden; }
+        .deal-card .deal-meta { display: flex; justify-content: space-between; margin-top: 0.5rem; font-size: 0.75rem; }
+        .deal-card .deal-amount { font-weight: 600; color: #059669; }
+        .deal-card .deal-date { color: #6b7280; }
+        .filter-bar { background: white; border-radius: 0.5rem; padding: 0.75rem; box-shadow: 0 1px 3px rgba(0,0,0,0.08); display: flex; gap: 0.5rem; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; }
+        .filter-bar select, .filter-bar input { padding: 0.5rem 0.75rem; border: 1px solid #d1d5db; border-radius: 0.375rem; font-size: 0.875rem; background: white; }
+        .filter-bar input[type="search"] { flex: 1; min-width: 200px; }
+        .empty-col { color: #9ca3af; font-size: 0.75rem; text-align: center; padding: 1.5rem 0; }
+        .legend { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.75rem; color: #6b7280; margin-right: 0.75rem; }
+        .legend-dot { width: 0.625rem; height: 0.625rem; border-radius: 9999px; }
+
+        /* 주문 입력 패널 */
+        #newDealPanel, #newDeliveryPanel, #newNonSalesPanel, #newQuotePanel { overflow: hidden; max-height: 0; transition: max-height 0.3s ease, opacity 0.2s ease; opacity: 0; }
+        #newDealPanel.open, #newDeliveryPanel.open, #newNonSalesPanel.open, #newQuotePanel.open { max-height: 5000px; opacity: 1; margin-bottom: 1rem; }
+        .form-section { background: white; border-radius: 0.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.08); padding: 1rem; }
+        .form-section h2 { font-weight: 600; font-size: 1rem; margin-bottom: 0.75rem; padding-bottom: 0.5rem; border-bottom: 1px solid #e5e7eb; }
+        .form-section h3 { font-weight: 600; font-size: 0.875rem; margin-bottom: 0.5rem; }
+        .form-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.6rem; margin-bottom: 1rem; }
+        @media (max-width: 768px) { .form-grid { grid-template-columns: 1fr; } }
+        .form-grid .span-2 { grid-column: span 2; }
+        .form-grid .span-3 { grid-column: span 3; }
+        .form-grid .span-4 { grid-column: span 4; }
+
+        /* 배차 블록 */
+        .dispatch-block { border: 1px solid #e5e7eb; border-radius: 0.5rem; padding: 0.75rem; margin-bottom: 0.5rem; background: #fafafa; }
+        .dispatch-block.exhausted { background: #d1fae5; border-color: #10b981; }
+        .dispatch-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+        .dispatch-head .dispatch-title { font-weight: 600; font-size: 0.875rem; }
+        .dispatch-head .dispatch-actions { display: flex; gap: 0.375rem; align-items: center; }
+        .dispatch-meta-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.5rem; margin-bottom: 0.5rem; }
+        .dispatch-meta-row label { display: block; font-size: 0.7rem; color: #4b5563; margin-bottom: 0.15rem; }
+        .dispatch-meta-row input { width: 100%; padding: 0.3rem 0.5rem; border: 1px solid #d1d5db; border-radius: 0.25rem; font-size: 0.8125rem; }
+        .dispatch-lines { width: 100%; border-collapse: collapse; font-size: 0.75rem; }
+        .dispatch-lines th { background: #f3f4f6; padding: 0.3rem; text-align: left; font-weight: 600; color: #4b5563; font-size: 0.7rem; }
+        .dispatch-lines td { padding: 0.2rem 0.3rem; border-bottom: 1px solid #f3f4f6; vertical-align: middle; }
+        .dispatch-lines input { width: 100%; padding: 0.25rem 0.35rem; border: 1px solid #e5e7eb; border-radius: 0.2rem; font-size: 0.75rem; background: white; }
+        .dispatch-lines input[readonly] { background: #f9fafb; color: #6b7280; }
+        .dispatch-lines .qty-input { text-align: right; }
+        .dispatch-lines .qty-input.over { background: #fecaca; border-color: #dc2626; }
+        .dispatch-lines .remaining-cell { text-align: right; font-size: 0.7rem; color: #6b7280; }
+        .dispatch-lines .remaining-cell.zero { color: #059669; font-weight: 600; }
+        .form-grid label { display: block; font-size: 0.7rem; font-weight: 500; color: #4b5563; margin-bottom: 0.2rem; }
+        .form-grid input, .form-grid select, .form-grid textarea { width: 100%; padding: 0.35rem 0.5rem; border: 1px solid #d1d5db; border-radius: 0.375rem; font-size: 0.8125rem; background: white; }
+        .form-grid input:focus, .form-grid select:focus, .form-grid textarea:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,0.1); }
+        .form-grid input[readonly], .form-grid input:disabled { background: #f3f4f6; color: #6b7280; }
+
+        /* XML 드롭존 */
+        #xmlDropZone { border: 2px dashed #d1d5db; border-radius: 0.5rem; padding: 1.25rem; text-align: center; background: #f9fafb; cursor: pointer; margin-bottom: 1rem; transition: all 0.2s; }
+        #xmlDropZone:hover { border-color: #3b82f6; background: #eff6ff; }
+        #xmlDropZone.dragover { border-color: #10b981; background: #d1fae5; }
+        #xmlDropZone .icon { font-size: 1.5rem; margin-bottom: 0.25rem; }
+        #xmlDropZone .main-text { font-weight: 500; font-size: 0.875rem; color: #374151; }
+        #xmlDropZone .sub-text { font-size: 0.75rem; color: #6b7280; margin-top: 0.25rem; }
+        #xmlParseStatus { margin-top: 0.5rem; padding: 0.5rem 0.75rem; border-radius: 0.375rem; font-size: 0.8125rem; display: none; }
+        #xmlParseStatus.success { background: #d1fae5; color: #065f46; display: block; }
+        #xmlParseStatus.error { background: #fecaca; color: #991b1b; display: block; }
+
+        /* 라인 표 */
+        .line-table { width: 100%; border-collapse: collapse; font-size: 0.75rem; }
+        .line-table thead th { background: #f3f4f6; padding: 0.4rem 0.3rem; text-align: left; font-weight: 600; color: #4b5563; border-bottom: 1px solid #d1d5db; font-size: 0.7rem; }
+        .line-table tbody td { padding: 0.2rem; border-bottom: 1px solid #f3f4f6; vertical-align: middle; }
+        .line-table input { width: 100%; padding: 0.3rem 0.4rem; border: 1px solid #e5e7eb; border-radius: 0.25rem; font-size: 0.75rem; background: white; }
+        .line-table input:focus { border-color: #3b82f6; outline: none; }
+        .line-table input[readonly] { background: #f9fafb; color: #6b7280; }
+        .line-table .num-col { text-align: right; }
+        .line-table .line-remove { background: #fee2e2; color: #991b1b; border: none; padding: 0.3rem 0.5rem; border-radius: 0.25rem; cursor: pointer; font-size: 0.75rem; }
+        .line-table .line-remove:hover { background: #fecaca; }
+
+        .totals-box { display: flex; justify-content: flex-end; gap: 1rem; margin-top: 0.5rem; padding: 0.5rem 0.75rem; background: #f0fdf4; border-radius: 0.375rem; font-size: 0.875rem; }
+        .totals-box div { display: flex; gap: 0.25rem; }
+        .totals-box .label { color: #6b7280; }
+        .totals-box .grand { color: #059669; font-weight: 700; font-size: 1rem; }
+
+        .form-actions { display: flex; justify-content: flex-end; gap: 0.5rem; padding-top: 0.75rem; border-top: 1px solid #e5e7eb; margin-top: 1rem; }
+        .btn-sm { font-size: 0.8125rem; padding: 0.4rem 0.75rem; }
+
+        /* Chrome 자동완성 노란 배경 제거 */
+        input:-webkit-autofill,
+        input:-webkit-autofill:hover,
+        input:-webkit-autofill:focus,
+        input:-webkit-autofill:active,
+        textarea:-webkit-autofill,
+        select:-webkit-autofill {
+            -webkit-box-shadow: 0 0 0 30px white inset !important;
+            -webkit-text-fill-color: #374151 !important;
+            transition: background-color 5000s ease-in-out 0s;
+            caret-color: #374151;
+        }
+    </style>
+    <script src="../assets/js/common.js?v=20260604g"></script>
+    <script src="../assets/js/order-management.js?v=20260611a" defer></script>
+</head>
+<body class="bg-gray-50 text-gray-800">
+    <nav class="bg-white shadow-sm border-b">
+        <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <a href="../index.html" class="text-gray-600 hover:text-gray-900 text-sm">← 대시보드</a>
+                <h1 class="text-lg font-semibold text-gray-900">주문 관리</h1>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto px-4 py-6">
+
+        <!-- 견적 입력 패널 -->
+        <div id="newQuotePanel">
+            <div class="form-section">
+                <h2 id="quoteFormTitle">견적 입력</h2>
+
+                <form id="newQuoteForm" autocomplete="off">
+                    <input type="hidden" id="quoteNumber">
+                    <div class="form-grid">
+                        <div>
+                            <label>견적일자 *</label>
+                            <input type="date" id="quoteDate" required>
+                        </div>
+                        <div>
+                            <label>구분 *</label>
+                            <select id="quoteNature" required>
+                                <option value="관급">관급</option>
+                                <option value="사급">사급</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label>부가세</label>
+                            <div style="display:flex; gap:0.75rem; padding-top:0.35rem;">
+                                <label style="display:inline-flex; gap:0.2rem; font-weight:normal; font-size:0.8125rem;"><input type="radio" name="quoteVat" value="포함" checked> 포함</label>
+                                <label style="display:inline-flex; gap:0.2rem; font-weight:normal; font-size:0.8125rem;"><input type="radio" name="quoteVat" value="별도"> 별도</label>
+                            </div>
+                        </div>
+                        <div>
+                            <label>견적유효기간</label>
+                            <input type="date" id="quoteValidUntil">
+                        </div>
+
+                        <div class="span-2">
+                            <label>거래처</label>
+                            <input id="quoteOrgName" list="orgNameDatalist" placeholder="거래처 / 받는 곳" autocomplete="off">
+                            <datalist id="orgNameDatalist"></datalist>
+                        </div>
+                        <div>
+                            <label>공급자</label>
+                            <select id="quoteSupplier">
+                                <option value="두발로">두발로</option>
+                                <option value="선돌">선돌</option>
+                                <option value="엠에스테크">엠에스테크</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label>담당자 (사내)</label>
+                            <select id="quoteHandler">
+                                <option value="">선택...</option>
+                            </select>
+                        </div>
+
+                        <div class="span-4">
+                            <label>사업명</label>
+                            <input id="quoteProjectName">
+                        </div>
+
+                        <div class="span-2">
+                            <label>인도조건</label>
+                            <select id="quoteTerms">
+                                <option value="">선택...</option>
+                                <option value="납품장소 하차도">납품장소 하차도</option>
+                                <option value="상차도">상차도</option>
+                                <option value="현장설치도">현장설치도</option>
+                                <option value="방문수령">방문수령</option>
+                                <option value="기타">기타</option>
+                            </select>
+                        </div>
+                        <div class="span-2">
+                            <label>메모</label>
+                            <input id="quoteMemo">
+                        </div>
+                    </div>
+
+                    <h3 class="text-gray-700" style="display:flex; justify-content:space-between; align-items:center; margin-top:1rem;">
+                        <span>품목 라인</span>
+                        <span style="display:flex; gap:0.25rem;">
+                            <button type="button" id="openPriceTableBtn" class="btn btn-secondary btn-sm">📋 단가표에서 선택</button>
+                            <button type="button" id="addQuoteLineBtn" class="btn btn-secondary btn-sm">+ 라인 추가</button>
+                        </span>
+                    </h3>
+                    <table class="line-table">
+                        <thead>
+                            <tr>
+                                <th style="width:30px">#</th>
+                                <th style="width:14%">품목</th>
+                                <th style="width:14%">품명</th>
+                                <th style="width:18%">규격</th>
+                                <th style="width:6%">단위</th>
+                                <th style="width:8%">수량</th>
+                                <th style="width:10%">단가</th>
+                                <th style="width:10%">공급가</th>
+                                <th style="width:8%">세액</th>
+                                <th style="width:10%">합계</th>
+                                <th style="width:30px"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="quoteLineBody"></tbody>
+                    </table>
+                    <div class="totals-box">
+                        <div><span class="label">공급가</span> <span id="quoteTotalSupply">0</span></div>
+                        <div><span class="label">세액</span> <span id="quoteTotalTax">0</span></div>
+                        <div><span class="label">합계</span> <span class="grand" id="quoteTotalGrand">0원</span></div>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" id="cancelQuoteBtn" class="btn btn-secondary btn-sm">취소</button>
+                        <button type="submit" class="btn btn-primary btn-sm">저장</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- 비매출 배송 입력 패널 — 주문 없이 단독 배송 (송장 출력용) -->
+        <div id="newNonSalesPanel">
+            <div class="form-section">
+                <h2 style="color:#7c3aed;">비매출 배송 등록 <span style="font-size:0.75rem; color:#9ca3af; font-weight:normal;">(주문 없이 송장 출력용)</span></h2>
+
+                <form id="newNonSalesForm" autocomplete="off">
+                    <div class="form-grid">
+                        <div class="span-2">
+                            <label>수신자</label>
+                            <input id="nsOrgName" placeholder="시험기관·이송지·받는 사람 등">
+                        </div>
+                        <div class="span-2">
+                            <label>발신자</label>
+                            <select id="nsSupplier">
+                                <option value="두발로">두발로</option>
+                                <option value="선돌">선돌</option>
+                                <option value="엠에스테크">엠에스테크</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label>도착일자 *</label>
+                            <input type="date" id="nsDeliveryDate" required>
+                        </div>
+                        <div>
+                            <label>도착시간</label>
+                            <input type="time" id="nsDeliveryTime" step="600" value="08:00">
+                        </div>
+                        <div class="span-2">
+                            <label>인수자</label>
+                            <input id="nsReceiverName">
+                        </div>
+
+                        <div class="span-3">
+                            <label>주소</label>
+                            <div style="display:flex; gap:0.25rem;">
+                                <input id="nsAddress" placeholder="주소" style="flex:1;">
+                                <button type="button" id="nsMapBtn" class="btn btn-secondary btn-sm" style="white-space:nowrap;">지도 검색</button>
+                            </div>
+                        </div>
+                        <div>
+                            <label>인수자 연락처</label>
+                            <input id="nsReceiverPhone" placeholder="010-...">
+                        </div>
+
+                        <div class="span-4">
+                            <label>주소링크</label>
+                            <input id="nsAddressLink" placeholder="https://naver.me/...">
+                        </div>
+
+                        <div class="span-4">
+                            <label>비고</label>
+                            <textarea id="nsMemo" rows="2"></textarea>
+                        </div>
+
+                        <div class="span-2">
+                            <label>배송구분</label>
+                            <select id="nsTransport">
+                                <option value="">선택...</option>
+                                <option value="택배">택배</option>
+                                <option value="화물">화물</option>
+                                <option value="직배" selected>직배</option>
+                                <option value="현장 수령">현장 수령</option>
+                                <option value="기타">기타</option>
+                            </select>
+                        </div>
+                        <div class="span-2">
+                            <label>차종</label>
+                            <select id="nsVehicleType">
+                                <option value="">선택...</option>
+                                <option value="1톤">1톤</option>
+                                <option value="2.5톤">2.5톤</option>
+                                <option value="3.5톤">3.5톤</option>
+                                <option value="5톤 축">5톤 축</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <h3 class="text-gray-700" style="display:flex; justify-content:space-between; align-items:center; margin-top:1rem;">
+                        <span>품목</span>
+                        <button type="button" id="nsAddLineBtn" class="btn btn-secondary btn-sm">+ 라인 추가</button>
+                    </h3>
+                    <table class="line-table">
+                        <thead>
+                            <tr>
+                                <th style="width:30px">#</th>
+                                <th>품명</th>
+                                <th>규격</th>
+                                <th style="width:12%">수량</th>
+                                <th style="width:8%">단위</th>
+                                <th>비고</th>
+                                <th style="width:30px"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="nsLineBody"></tbody>
+                    </table>
+
+                    <div class="form-actions">
+                        <button type="button" id="nsCancelBtn" class="btn btn-secondary btn-sm">취소</button>
+                        <button type="submit" class="btn btn-primary btn-sm" style="background:#7c3aed;">저장</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- 배송 입력 패널 — 주문 모달의 [+ 배송 등록]으로 열림 -->
+        <div id="newDeliveryPanel">
+            <div class="form-section">
+                <h2 id="deliveryFormTitle">배송 등록</h2>
+                <div id="deliveryDealHeader" style="margin-bottom:0.75rem; padding:0.5rem 0.75rem; background:#eff6ff; border-radius:0.375rem; font-size:0.8125rem; color:#1e40af;"></div>
+
+                <form id="newDeliveryForm" autocomplete="off">
+                    <input type="hidden" id="deliveryDealNumber">
+                    <input type="hidden" id="deliveryNumber">
+
+                    <div class="form-grid">
+                        <div>
+                            <label>도착일자 *</label>
+                            <input type="date" id="deliveryDate" required>
+                        </div>
+                        <div>
+                            <label>도착시간</label>
+                            <input type="time" id="deliveryTime" step="600" value="08:00">
+                        </div>
+                        <div class="span-2">
+                            <label>인수자</label>
+                            <input id="deliveryReceiverName" placeholder="이름">
+                        </div>
+
+                        <div class="span-3">
+                            <label>주소</label>
+                            <div style="display:flex; gap:0.25rem;">
+                                <input id="deliveryAddress" placeholder="경기도 의정부시 신곡동 773-1" style="flex:1;">
+                                <button type="button" id="naverMapSearchBtn" class="btn btn-secondary btn-sm" style="white-space:nowrap;">지도 검색</button>
+                            </div>
+                        </div>
+                        <div>
+                            <label>인수자 연락처</label>
+                            <input id="deliveryReceiverPhone" placeholder="010-...">
+                        </div>
+
+                        <div class="span-4">
+                            <label>주소링크 <span style="color:#9ca3af; font-weight:normal;">(네이버지도에서 공유 → 복사 → 붙여넣기)</span></label>
+                            <input id="deliveryAddressLink" placeholder="https://naver.me/...">
+                        </div>
+
+                        <div class="span-4">
+                            <label>비고</label>
+                            <textarea id="deliveryMemo" rows="2" placeholder="배송 관련 메모"></textarea>
+                        </div>
+                    </div>
+
+                    <h3 class="text-gray-700" style="display:flex; justify-content:space-between; align-items:center; margin-top:1rem;">
+                        <span>배차 <span id="dispatchCountLabel" style="color:#9ca3af; font-weight:normal; font-size:0.75rem;"></span></span>
+                        <button type="button" id="addDispatchBtn" class="btn btn-secondary btn-sm">+ 배차 추가</button>
+                    </h3>
+                    <div id="dispatchList"></div>
+
+                    <div class="form-actions">
+                        <button type="button" id="deleteDeliveryBtn" class="btn btn-secondary btn-sm" style="background:#fee2e2; color:#991b1b; display:none;">배송 삭제 → 주문으로</button>
+                        <button type="button" id="cancelDeliveryBtn" class="btn btn-secondary btn-sm">취소</button>
+                        <button type="submit" class="btn btn-primary btn-sm">저장</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- 주문 입력 패널 (슬라이드다운) -->
+        <div id="newDealPanel">
+            <div class="form-section">
+                <h2 id="formTitle">주문 입력</h2>
+
+                <!-- XML 드래그앤드롭 영역 (관급용) -->
+                <div id="xmlDropZone">
+                    <div class="icon">📂</div>
+                    <div class="main-text">나라장터 분할납품요구서 XML을 여기 끌어다 놓으세요</div>
+                    <div class="sub-text">또는 클릭해서 파일 선택 · 사급 거래는 아래 칸에 직접 입력</div>
+                    <input type="file" id="xmlFileInput" accept=".xml" style="display: none;">
+                </div>
+                <div id="xmlParseStatus"></div>
+
+                <form id="newDealForm" autocomplete="off">
+                    <h3 class="text-gray-700">거래 정보</h3>
+                    <div class="form-grid">
+                        <div>
+                            <label>주문일자</label>
+                            <input type="date" id="formOrderDate">
+                        </div>
+                        <div>
+                            <label>납품기한</label>
+                            <input type="date" id="formDueDate">
+                        </div>
+                        <div>
+                            <label>구분 *</label>
+                            <select id="formNature" required>
+                                <option value="">선택...</option>
+                                <option value="관급">관급</option>
+                                <option value="사급">사급</option>
+                                <option value="비매출-시험시료">비매출-시험시료</option>
+                                <option value="비매출-사내이송">비매출-사내이송</option>
+                                <option value="비매출-기타">비매출-기타</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label>부가세</label>
+                            <div style="display: flex; gap: 0.75rem; padding-top: 0.35rem;">
+                                <label style="display: inline-flex; gap: 0.2rem; font-weight: normal; font-size: 0.8125rem;"><input type="radio" name="vat" value="포함"> 포함</label>
+                                <label style="display: inline-flex; gap: 0.2rem; font-weight: normal; font-size: 0.8125rem;"><input type="radio" name="vat" value="별도" checked> 별도</label>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label>거래번호 (자동)</label>
+                            <input id="formDealNumber" placeholder="B-26-..." style="font-family: monospace;">
+                        </div>
+                        <div>
+                            <label>납품요구번호 (관급)</label>
+                            <input id="formProcureNo" placeholder="R26TB...">
+                        </div>
+                        <div class="span-2">
+                            <label>거래처</label>
+                            <input id="formOrgName" placeholder="경기도 의정부시 / ㈜미성이앤씨 등" autocomplete="off">
+                        </div>
+
+                        <div class="span-4">
+                            <label>사업명 / 계약명</label>
+                            <input id="formProjectName" placeholder="민원 해결을 위한 보행매트 구입">
+                        </div>
+
+                        <div>
+                            <label>공급자</label>
+                            <select id="formSupplier">
+                                <option value="두발로">두발로</option>
+                                <option value="선돌">선돌</option>
+                                <option value="엠에스테크">엠에스테크</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label>담당자 (사내)</label>
+                            <select id="formHandler">
+                                <option value="">선택...</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label>대금수령</label>
+                            <input id="formPaymentType" placeholder="대지급 / 직불 / 카드 등">
+                        </div>
+                        <div>
+                            <label>견적참조</label>
+                            <input id="formQuoteRef" placeholder="견적 연번 (있으면)">
+                        </div>
+                        <div>
+                            <label>세금계산서일자 <span style="color:#9ca3af; font-weight:normal;">(입력 시 매출실현)</span></label>
+                            <input type="date" id="formInvoiceDate">
+                        </div>
+
+                        <div class="span-4">
+                            <label>기존 담당자에서 선택 <span style="color:#9ca3af; font-weight:normal;">(거래처 입력 후 자동 채움)</span></label>
+                            <select id="formExistingContact">
+                                <option value="">— 새 담당자 입력 —</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label>수요부서</label>
+                            <input id="formDemandDept" placeholder="녹지산림과">
+                        </div>
+                        <div>
+                            <label>담당자</label>
+                            <input id="formDemandHandler" placeholder="장소영">
+                        </div>
+                        <div>
+                            <label>직함</label>
+                            <input id="formDemandTitle" placeholder="주무관">
+                        </div>
+                        <div>
+                            <label>연락처</label>
+                            <input id="formDemandPhone" placeholder="031-...">
+                        </div>
+                        <div class="span-2">
+                            <label>이메일</label>
+                            <input id="formDemandEmail" placeholder="@">
+                        </div>
+
+                        <div class="span-4">
+                            <label>메모 <span style="color:#9ca3af; font-weight:normal;">(자유 입력 — 거래 관련 메모)</span></label>
+                            <textarea id="formMemo" rows="2" placeholder="예: 할인 단가 적용 / 분할 납품 / 검수 일정 등"></textarea>
+                        </div>
+                    </div>
+
+                    <h3 class="text-gray-700" style="display: flex; justify-content: space-between; align-items: center;">
+                        <span>품목 라인 <span style="color:#9ca3af; font-weight:normal; font-size:0.75rem;">(Tab 키로 칸 이동 / XML 자동 채움 지원)</span></span>
+                        <button type="button" id="addLineBtn" class="btn btn-secondary btn-sm">+ 라인 추가</button>
+                    </h3>
+                    <table class="line-table">
+                        <thead>
+                            <tr>
+                                <th style="width:30px">#</th>
+                                <th style="width:14%">품목</th>
+                                <th style="width:14%">품명</th>
+                                <th style="width:18%">규격</th>
+                                <th style="width:6%">단위</th>
+                                <th style="width:8%">수량</th>
+                                <th style="width:10%">단가</th>
+                                <th style="width:10%">공급가</th>
+                                <th style="width:8%">세액</th>
+                                <th style="width:10%">합계</th>
+                                <th style="width:30px"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="lineTableBody"></tbody>
+                    </table>
+                    <div class="totals-box">
+                        <div><span class="label">공급가</span> <span id="totalSupply">0</span></div>
+                        <div><span class="label">세액</span> <span id="totalTax">0</span></div>
+                        <div><span class="label">합계</span> <span class="grand" id="totalGrand">0원</span></div>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" id="cancelDealBtn" class="btn btn-secondary btn-sm">취소</button>
+                        <button type="submit" class="btn btn-primary btn-sm">저장</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="filter-bar">
+            <select id="filterNature">
+                <option value="">전체 구분</option>
+                <option value="관급">관급</option>
+                <option value="사급">사급</option>
+                <option value="비매출-시험시료">비매출-시험시료</option>
+                <option value="비매출-사내이송">비매출-사내이송</option>
+                <option value="비매출-기타">비매출-기타</option>
+            </select>
+            <select id="filterTransport">
+                <option value="">전체 운송형태</option>
+                <option value="택배">택배</option>
+                <option value="직배">직배</option>
+                <option value="화물">화물</option>
+                <option value="방문픽업">방문픽업</option>
+            </select>
+            <input type="search" id="filterSearch" placeholder="거래번호 / 거래처 / 사업명 검색">
+            <button id="reloadBtn" class="btn btn-secondary">새로고침</button>
+        </div>
+
+        <div class="mb-3 text-xs text-gray-500">
+            <span class="legend"><span class="legend-dot" style="background:#3b82f6"></span>관급(G-)</span>
+            <span class="legend"><span class="legend-dot" style="background:#10b981"></span>사급(B-)</span>
+            <span class="legend"><span class="legend-dot" style="background:#9ca3af"></span>비매출</span>
+        </div>
+
+        <div id="loadingState" class="text-center py-12 text-gray-500">데이터 로딩 중...</div>
+        <div id="errorState" class="hidden text-center py-12 text-red-600"></div>
+        <div id="kanban" class="kanban hidden"></div>
+
+        <div id="completedList" class="completed-list hidden">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+                <h3 style="margin:0;">납품 완료 <span id="completedCount" style="color:#9ca3af; font-weight:normal;"></span></h3>
+                <select id="completedYearFilter" style="padding:0.35rem 0.5rem; border:1px solid #d1d5db; border-radius:0.25rem; font-size:0.8125rem;"></select>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th class="sortable" data-sort="주문일자" style="width:12%; cursor:pointer;">주문일자 <span class="sort-ind"></span></th>
+                        <th class="sortable" data-sort="거래처" style="width:18%; cursor:pointer;">거래처 <span class="sort-ind"></span></th>
+                        <th class="sortable" data-sort="사업명" style="cursor:pointer;">사업명 <span class="sort-ind"></span></th>
+                        <th class="sortable" data-sort="금액" style="width:12%; text-align:right; cursor:pointer;">금액 <span class="sort-ind"></span></th>
+                        <th class="sortable" data-sort="세금계산서일자" style="width:14%; cursor:pointer;">세금계산서일자 <span class="sort-ind"></span></th>
+                    </tr>
+                </thead>
+                <tbody id="completedBody"></tbody>
+            </table>
+            <div id="completedPager" style="display:flex; justify-content:center; align-items:center; gap:0.5rem; margin-top:0.5rem; font-size:0.8125rem;"></div>
+        </div>
+    </main>
+
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/service-worker.js').then(reg => reg.update()).catch(() => {});
+            navigator.serviceWorker.addEventListener('message', e => {
+                if (e.data && e.data.type === 'SW_UPDATED') {
+                    console.log('[SW 업데이트 감지 — 자동 새로고침]');
+                    location.reload();
+                }
+            });
+        }
+    </script>
+</body>
+</html>

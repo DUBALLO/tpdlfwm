@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<!--
+═══════════════════════════════════════════════════════════════
+ 송장 인쇄 페이지 — Phase 4-1 (배송 단위 송장 · 인도용/인수용 2-up) · 시안
+═══════════════════════════════════════════════════════════════
+
+[1] 페이즈 / 용도 / 확정 결정 (2026-06-11)
+  - Phase 4-1: 배송 1건 = 송장 1장 (A4 한 장에 인도용 + 절취선 + 인수용 2부)
+  - 운전기사·현장 인수자용 → 금액/단가 없음
+  - 레이아웃 기준: 한국코이어 실물 양식(인도용/인수용) + quote-print.html 디자인 언어
+  - 확정 결정:
+    · 품목   : 배차엔 품목 없음 → GAS가 배차.품명으로 주문품목을 조인해 품목(보행매트) 채움
+    · 인쇄단위: 1배송 = 송장 1장. 배차(차량) 여러 대면 차종을 "비고"에 합쳐 표기
+    · 상단날짜: 발행일 = 출력일(오늘). 브라우저에서 자동 계산
+    · 하단문구: 인도용 "상기 물품을 정히 인도함" / 인수용 "상기 물품을 정히 인수함"
+  - 현 단계는 시안: 파라미터 없이 열면 내장 샘플(서산시 산불대응센터)로 즉시 렌더
+
+[2] URL 파라미터 계약
+  ?배송번호=G-26-0610001-01   해당 배송을 GAS에서 받아 인도용/인수용 1장 출력
+  ?sample=1 (또는 배송번호 없음) 내장 샘플 데이터로 즉시 렌더 — 네트워크 요청 없음 (노란 배너)
+
+[3] GAS 연동 (다음 통합 단계에서 printInvoice 구현 예정 — 현재 미구현)
+  요청: GET {GAS_URL}?printInvoice={배송번호}
+  응답 JSON:
+  {
+    ok: true,
+    주문: { 주문번호, 주문성격, 사업명, 거래처 },     // 거래처 = 수요처로 표시
+    배송: { 배송번호, 배송일자, 배송시간, 주소, 인수자명, 인수자전화, 비고 },
+    배차들: [ { 배차번호, 배송구분, 차종,
+               items: [ { 품목, 품명, 규격, 수량, 단위, 비고 } ] } ]  // 품목은 GAS가 주문품목 조인으로 채움
+  }
+  - render()가 배차들[].items 를 한 내역 표로 평탄화하고, 배차들의 차종을 모아 비고에 합침
+  - 공급자(두발로㈜)는 고정 정보 → 페이지 내장 상수 SUPPLIER
+-->
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>송장</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    @page { size: A4 portrait; margin: 11mm 10mm; }
+    body {
+      font-family: 'Noto Sans KR', sans-serif; color: #232323; background: #e9ebef;
+      -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+
+    /* 배송 1건 = A4 1장 (인도용 + 절취선 + 인수용) */
+    .sheet {
+      width: 190mm; min-height: 273mm; margin: 8mm auto; padding: 5mm 6mm;
+      background: #fff; box-shadow: 0 2px 14px rgba(0,0,0,0.13);
+      display: flex; flex-direction: column;
+      page-break-after: always; break-after: page;
+    }
+    .sheet:last-child { page-break-after: auto; break-after: auto; }
+
+    /* ── 한 부(송장) ── 색만 변수로 분기 (인도용=적, 인수용=청) ── */
+    .slip { --c: #b9432f; --lbl: #f7e2dd; --soft: #e4b6ab; --alt: #fdf4f2; }
+    .slip.receive { --c: #3c8b88; --lbl: #dcecec; --soft: #b4d8d5; --alt: #eef8f7; }
+
+    .slip-top { display: flex; align-items: flex-end; justify-content: space-between; padding: 0.5mm 1mm 1.8mm; }
+    .slip-title { font-size: 21pt; font-weight: 900; letter-spacing: 0.04em; line-height: 1; color: #1d1d1d; }
+    .slip-title small { font-size: 14pt; font-weight: 700; letter-spacing: 0; }
+    .slip-date { font-size: 11pt; font-weight: 500; color: #2c2c2c; letter-spacing: 0.02em; }
+
+    .slip-table { width: 100%; border-collapse: collapse; table-layout: fixed;
+      border-top: 2.2pt solid var(--c); border-bottom: 2.2pt solid var(--c); }
+    .slip-table th, .slip-table td { font-size: 9.5pt; padding: 1.3mm 2.5mm; line-height: 1.25; vertical-align: middle; }
+    .slip-table .lbl {
+      background: var(--lbl); font-weight: 700; text-align: center; letter-spacing: 0.06em; color: #2a2a2a;
+      border-right: 1px solid var(--soft); border-bottom: 1px solid var(--soft);
+    }
+    .slip-table .val { text-align: left; border-bottom: 1px solid var(--soft); }
+    .slip-table .ihead .ih {
+      background: var(--lbl); font-weight: 700; text-align: center; letter-spacing: 0.02em; color: #2a2a2a;
+      border-bottom: 1.3px solid var(--c); border-left: 1px solid var(--soft);
+    }
+    .slip-table .it td { text-align: center; height: 5mm; border-bottom: 1px solid var(--soft); border-left: 1px solid var(--soft); }
+    .slip-table .it td.i-name { font-weight: 500; }
+    .slip-table .it.alt td { background: var(--alt); }
+    .slip-table .remark .val { min-height: 7mm; }
+    /* 내역 블록 위·아래 굵은 강조선 (인도용=적, 인수용=청) */
+    .slip-table .ihead .lbl, .slip-table .ihead .ih { border-top: 1.8pt solid var(--c); }
+    .slip-table .remark .lbl, .slip-table .remark .val { border-top: 1.8pt solid var(--c); }
+
+    .affirm { text-align: center; font-size: 11.5pt; font-weight: 700; letter-spacing: 0.08em; color: #1d1d1d; padding: 2.6mm 0 1.6mm; }
+
+    .sign-wrap { display: flex; justify-content: flex-end; padding: 0 1mm 2.5mm; }
+    .sign-box { width: 60mm; height: 15mm; border: 1px solid #9aa1a9; background: #fff; position: relative; }
+    .sign-box span { position: absolute; top: 1.3mm; left: 1.8mm; font-size: 9pt; color: #8b8f97; }
+
+    .co-bar { display: flex; align-items: stretch; margin-top: auto;
+      border-top: 2.2pt solid var(--c); border-bottom: 2.2pt solid var(--c); background: transparent; }
+    .co-logo { flex: 0 0 45%; display: flex; align-items: center; gap: 2.5mm; padding: 2.4mm 4mm; }
+    .co-logo img { height: 7.5mm; width: auto; }
+    .co-logo b { font-size: 12pt; font-weight: 700; color: #1d1d1d; }
+    .co-info { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 0.6mm;
+      padding: 2.4mm 4mm; border-left: 1px solid var(--soft); font-size: 9.5pt; color: #2c2c2c; }
+
+    .cutline { border: 0; border-top: 1.4px dotted #9aa0a8; margin: 3.5mm 0; }
+
+    /* 샘플 배너 / 로딩 / 인쇄 컨트롤 (인쇄 시 숨김) */
+    .sample-banner { display: none; background: #fef3c7; color: #92400e; border-bottom: 1px solid #fbbf24;
+      text-align: center; padding: 9px 16px; font-size: 0.85rem; font-weight: 500; }
+    #status { padding: 4rem; text-align: center; font-size: 1rem; color: #6b7280; }
+    #status.error { color: #dc2626; }
+    .print-controls { position: fixed; top: 1rem; right: 1rem; display: flex; gap: 0.5rem; z-index: 100; }
+    .print-controls button { padding: 0.5rem 1rem; font-size: 0.875rem; border-radius: 0.375rem; border: none; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .print-controls .print-btn { background: #b9432f; color: #fff; }
+    .print-controls .close-btn { background: #f3f4f6; color: #4b5563; }
+
+    @media print {
+      body { background: #fff; }
+      .print-controls, .sample-banner { display: none !important; }
+      .sheet { width: auto; min-height: 0; margin: 0; padding: 0; box-shadow: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="print-controls">
+    <button class="print-btn" onclick="window.print()">인쇄</button>
+    <button class="close-btn" onclick="window.close()">닫기</button>
+  </div>
+  <div id="sampleBanner" class="sample-banner">시안 미리보기 — 내장 샘플 데이터입니다 (서산시 산불대응센터)</div>
+  <div id="status">불러오는 중...</div>
+  <div id="invoiceContent" style="display:none;"></div>
+
+  <script>
+    const GAS_URL = 'https://script.google.com/macros/s/AKfycbxM128rPA6TSQltBIOuiB2zGQB--n9S-V93jNLGxTLJZnwBpUMfgiG1BMZDwCXufW2f/exec';
+
+    // 공급자 고정 정보 (두발로㈜)
+    const SUPPLIER = { 상호: '두발로 주식회사', 우편번호: '11414', 소재지: '경기도 양주시 광적면 광적로 221-8', 전화: '031-866-8872' };
+
+    const MIN_ITEM_ROWS = 5;                       // 내역 최소 줄 수 (적으면 빈칸으로 채움)
+    const WEEKDAY = ['일', '월', '화', '수', '목', '금', '토'];
+
+    // 내장 샘플 — 이미지(서산시 산불대응센터)와 동일. ?sample=1 또는 파라미터 없이 열면 이 데이터로 렌더
+    const SAMPLE_DATA = {
+      ok: true,
+      주문: { 주문번호: 'G-26-0610001', 주문성격: '관급', 사업명: '산불대응센터 진입로 보행매트', 거래처: '충청남도 서산시' },
+      배송: { 배송번호: 'G-26-0610001-01', 배송일자: '2026-06-11', 배송시간: '7시 도착',
+              주소: '충남 서산시 음암면 말목길 109, 산불대응센터',
+              인수자명: '문덕수 이사님', 인수자전화: '010-4308-2081', 비고: '' },
+      배차들: [
+        { 배차번호: 1, 배송구분: '직배', 차종: '1톤', items: [
+          { 품목: '보행매트', 품명: 'DB-1000', 규격: 'w1000 × t30mm', 수량: 120, 단위: 'm', 비고: '' }
+        ] }
+      ]
+    };
+
+    function escapeHtml(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+    function fmt(n) { return Number(n || 0).toLocaleString('ko-KR'); }
+
+    function todayIssue() {
+      const t = new Date();
+      const mm = String(t.getMonth() + 1).padStart(2, '0');
+      const dd = String(t.getDate()).padStart(2, '0');
+      return `${t.getFullYear()}년 ${mm}월 ${dd}일`;
+    }
+
+    // "2026-06-11" + "7시 도착" → "2026-6-11(목) 7시 도착"
+    function fmtDelivDate(dateStr, timeStr) {
+      let head = escapeHtml(dateStr || '');
+      const m = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(String(dateStr || ''));
+      if (m) {
+        const y = +m[1], mo = +m[2], d = +m[3];
+        const dow = WEEKDAY[new Date(y, mo - 1, d).getDay()];
+        head = `${y}-${mo}-${d}(${dow})`;
+      }
+      return [head, escapeHtml(timeStr || '')].filter(Boolean).join(' ');
+    }
+
+    // 배송 1건 → 표시용 필드 (배차들 평탄화 + 차종을 비고로)
+    function deriveFields(d) {
+      const 배송 = d.배송 || {};
+      const 배차들 = d.배차들 || [];
+      const 내역 = [];
+      const 차종 = [];
+      배차들.forEach(b => {
+        if (b.차종 && !차종.includes(b.차종)) 차종.push(b.차종);
+        (b.items || []).forEach(it => 내역.push(it));
+      });
+      const 비고 = [];
+      if (배송.비고) 비고.push(배송.비고);
+      if (차종.length) 비고.push('차종: ' + 차종.join(', '));
+      return {
+        발행일: todayIssue(),
+        도착지: 배송.주소 || '',
+        수요처: (d.주문 && d.주문.거래처) || '',
+        인수자: [배송.인수자명, 배송.인수자전화 ? `(${배송.인수자전화})` : ''].filter(Boolean).join(' '),
+        납품일시: fmtDelivDate(배송.배송일자, 배송.배송시간),
+        비고: 비고.join('   ·   '),
+        내역: 내역
+      };
+    }
+
+    function itemRowsHtml(내역) {
+      const total = Math.max(MIN_ITEM_ROWS, 내역.length);
+      let html = '';
+      for (let i = 0; i < total; i++) {
+        const it = 내역[i];
+        const alt = i % 2 === 1 ? ' alt' : '';
+        if (it) {
+          const qty = [fmt(it.수량), escapeHtml(it.단위 || '')].filter(Boolean).join(' ');
+          html += `<tr class="it${alt}"><td class="i-cat">${escapeHtml(it.품목 || '')}</td><td class="i-name">${escapeHtml(it.품명 || '')}</td><td class="i-spec">${escapeHtml(it.규격 || '')}</td><td class="i-qty">${qty}</td></tr>`;
+        } else {
+          html += `<tr class="it${alt}"><td class="i-cat"></td><td class="i-name"></td><td class="i-spec"></td><td class="i-qty"></td></tr>`;
+        }
+      }
+      return { html, count: total };
+    }
+
+    // 한 부(인도용 또는 인수용)
+    function buildSlip(f, variant) {
+      const isDeliver = variant === 'deliver';
+      const items = itemRowsHtml(f.내역);
+      const labelRowspan = items.count + 1;       // 헤더(1) + 내역 줄 수
+      const suffix = isDeliver ? '(인도용)' : '(인수용)';
+      const affirm = isDeliver ? '상기 물품을 정히 인도함' : '상기 물품을 정히 인수함';
+      return `
+        <section class="slip ${isDeliver ? 'deliver' : 'receive'}">
+          <div class="slip-top">
+            <div class="slip-title">송&emsp;&emsp;장 <small>${suffix}</small></div>
+            <div class="slip-date">${escapeHtml(f.발행일)}</div>
+          </div>
+          <table class="slip-table">
+            <colgroup><col style="width:15%"><col style="width:20%"><col style="width:20%"><col style="width:26%"><col style="width:19%"></colgroup>
+            <tr class="meta"><th class="lbl">도 착 지</th><td class="val" colspan="4">${escapeHtml(f.도착지)}</td></tr>
+            <tr class="meta"><th class="lbl">수 요 처</th><td class="val" colspan="4">${escapeHtml(f.수요처)}</td></tr>
+            <tr class="meta"><th class="lbl">인 수 자</th><td class="val" colspan="4">${escapeHtml(f.인수자)}</td></tr>
+            <tr class="meta"><th class="lbl">납 품 일 시</th><td class="val" colspan="4">${escapeHtml(f.납품일시)}</td></tr>
+            <tr class="ihead">
+              <th class="lbl" rowspan="${labelRowspan}">내&nbsp;&nbsp;역</th>
+              <th class="ih">품목</th><th class="ih">품명</th><th class="ih">규격</th><th class="ih">수량</th>
+            </tr>
+            ${items.html}
+            <tr class="meta remark"><th class="lbl">비 고</th><td class="val" colspan="4">${escapeHtml(f.비고)}</td></tr>
+          </table>
+          <div class="affirm">${affirm}</div>
+          <div class="sign-wrap"><div class="sign-box"><span>서명</span></div></div>
+          <div class="co-bar">
+            <div class="co-logo"><img src="/assets/img/logo.png" alt="${escapeHtml(SUPPLIER.상호)}"></div>
+            <div class="co-info">
+              <div>(${escapeHtml(SUPPLIER.우편번호)}) ${escapeHtml(SUPPLIER.소재지)}</div>
+              <div>${escapeHtml(SUPPLIER.전화)}</div>
+            </div>
+          </div>
+        </section>`;
+    }
+
+    function render(d) {
+      document.title = `송장 - ${(d.배송 && d.배송.배송번호) || ''}`;
+      const f = deriveFields(d);
+      const html = `<div class="sheet">${buildSlip(f, 'deliver')}<hr class="cutline">${buildSlip(f, 'receive')}</div>`;
+      document.getElementById('status').style.display = 'none';
+      const c = document.getElementById('invoiceContent');
+      c.innerHTML = html;
+      c.style.display = 'block';
+    }
+
+    function showError(msg) {
+      const s = document.getElementById('status');
+      s.style.display = 'block';
+      s.textContent = '✗ ' + msg;
+      s.classList.add('error');
+    }
+
+    async function load() {
+      const params = new URLSearchParams(location.search);
+      const deliveryNo = params.get('배송번호');
+
+      if (!deliveryNo || params.get('sample') === '1') {
+        document.getElementById('sampleBanner').style.display = 'block';
+        render(SAMPLE_DATA);
+        return;
+      }
+      try {
+        const res = await fetch(`${GAS_URL}?printInvoice=${encodeURIComponent(deliveryNo)}`);
+        const data = await res.json();
+        if (!data.ok) { showError(data.error || '불러오기 실패'); return; }
+        render(data);
+      } catch (err) {
+        showError(err.message);
+      }
+    }
+
+    load();
+  </script>
+</body>
+</html>

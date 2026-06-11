@@ -6,6 +6,13 @@
 Thumbs.db
 desktop.ini
 
+# iptimeCloud 동기화 메타파일
+.ipDISK.db
+*.ipDISK.db
+
+# 로컬 핸드오버 문서 (시크릿 포함 — 배포 repo에 올리지 않음)
+HANDOVER.md
+
 # 에디터 임시
 *.swp
 *.swo
