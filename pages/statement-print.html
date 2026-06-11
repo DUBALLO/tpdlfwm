@@ -1,36 +1,13 @@
 <!DOCTYPE html>
 <!--
-  ============================================================
-  거래명세서 인쇄 페이지 — Phase 4-2 (시안)
-  ============================================================
-  [1] 용도
-    주문 단위 정산 문서 (금액 포함). 주문 1건의 품목·공급가액·세액을
-    A4 1장으로 출력. 디자인 언어는 quote-print.html(견적서)을 따름.
-    현재 단계는 샘플 데이터 기반 디자인 검토용 시안.
-
-  [2] URL 파라미터 계약
-    ?주문번호=B-26-0624001   → GAS에서 해당 주문 데이터 fetch (미구현, 실패 시 #status 오류)
-    ?sample=1 또는 파라미터 없음 → 내장 샘플 데이터로 즉시 렌더 (네트워크 요청 없음)
-
-  [3] GAS 엔드포인트 (다음 통합 단계에서 구현)
-    GET {GAS_URL}?printStatement={주문번호}
-
-    미래 GAS 응답 JSON 형태:
-    {
-      ok: true,
-      주문:   { 주문번호, 주문성격, 거래처, 사업명, 부가세포함, 일자 },
-      공급자: { 상호, 사업자등록번호, 대표자, 주소, 업태, 종목, 전화, 팩스 },
-      담당자: { 이름, 전화 },
-      품목:   [ { no, 품명, 규격, 단위, 수량, 단가, 공급가, 세액 } ],
-      합계:   { 공급가합, 세액합, 총액 }
-    }
-
-  [4] 표시 규칙
-    - body class = 주문.주문성격 (관급 | 사급) → 사급은 갈색 계열 테마
-    - 부가세포함=true (관급): 품목 세액 컬럼·계 행 세액 "-" 처리, summary 세액 줄 생략
-    - 부가세포함=false (사급): summary에 공급가액 / 세액 / 합계금액 3줄
-    - 데이터 키는 시트 컬럼명(공급가, 세액) 그대로 사용, 표시 라벨만 공급가액/세액
-    - 합계금액 띠의 한글 금액은 numToKorean()으로 생성 (억 단위까지)
+═══════════════════════════════════════════════════════════════
+ 거래명세서 인쇄 페이지 — Phase 4-2
+═══════════════════════════════════════════════════════════════
+ - 견적서(quote-print.html) 양식 그대로 + 관급/사급 분기
+ - 관급: 단가=부가세포함, 비고 컬럼, 합계금액 1행
+ - 사급: 단가=별도, 부가세 컬럼, 공급대가/부가세/합계금액 3행 + 입금계좌
+ - URL: ?주문번호=G-26-0604002 (실데이터) | ?sample=1 (샘플)
+ - GAS: GET printStatement={주문번호} → 공급자/담당자/품목/인감/로고 포함
 -->
 <html lang="ko">
 <head>
@@ -41,20 +18,16 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
   <style>
     :root {
-      --ink: #1a1a2e;
-      --ink-light: #4a4a5a;
-      --ink-muted: #8b8b9e;
-      --accent: #2d3748;
-      --border: #c8ccd4;
-      --border-light: #e2e6ec;
-      --bg-header: #f0f3f7;
-      --bg-warm: #fafbfd;
+      --ink: #1f1f1f;
+      --ink-light: #555;
+      --ink-muted: #888;
+      --accent: #333;            /* 짙은 회색 (R=G=B, 푸른 끼 없음) */
+      --border: #cccccc;
+      --border-light: #e6e6e6;
+      --bg-header: #f4f4f4;
+      --bg-warm: #fafafa;
     }
-    body.사급 {
-      --accent: #4e342e;
-      --bg-header: #f4f1ee;
-      --bg-warm: #fdfcfb;
-    }
+    /* 관급·사급 색 구분 제거 — 짙은 회색 통일 */
     * { margin: 0; padding: 0; box-sizing: border-box; }
     @page { size: A4 portrait; margin: 12mm 10mm 10mm 10mm; }
     body { font-family: 'Noto Sans KR', sans-serif; font-size: 9.5pt; line-height: 1.55; color: var(--ink); background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -82,29 +55,25 @@
     .supplier-grid .s-value { color: var(--ink); }
     .seal-img { position: absolute; top: 40px; right: 20px; width: 70px; height: 70px; }
     .seal-img img { width: 100%; height: 100%; object-fit: contain; }
-
-    /* 합계금액 강조 띠 (품목 테이블 위 전체 폭) */
-    .total-band { display: flex; align-items: baseline; background: var(--accent); color: #fff; padding: 9px 16px; margin-top: 3px; }
-    .total-band .tb-label { font-size: 9.5pt; font-weight: 700; letter-spacing: 4px; color: rgba(255,255,255,0.85); margin-right: 18px; flex-shrink: 0; }
-    .total-band .tb-amount { font-size: 14pt; font-weight: 900; letter-spacing: 1px; line-height: 1; }
-    .total-band .tb-won { font-size: 9.5pt; font-weight: 500; letter-spacing: 2px; margin-left: 4px; }
-    .total-band .tb-korean { margin-left: auto; font-size: 9.5pt; font-weight: 500; color: rgba(255,255,255,0.85); letter-spacing: 1px; }
-
     .items-table { width: 100%; border-collapse: collapse; border-top: 3px solid #fff; }
     .items-table thead th { background: var(--accent); color: #fff; font-weight: 500; font-size: 8.5pt; padding: 9px 6px; text-align: center; letter-spacing: 1px; border-right: 1px solid rgba(255,255,255,0.15); }
     .items-table thead th:last-child { border-right: none; }
     .items-table tbody td { padding: 8px 6px; border-bottom: 1px solid var(--border-light); font-size: 9pt; vertical-align: middle; }
     .items-table tbody tr:nth-child(even) { background: var(--bg-warm); }
-    .items-table tfoot td { padding: 9px 6px; font-size: 9.5pt; font-weight: 700; background: var(--bg-header); border-top: 2px solid var(--accent); border-bottom: 1px solid var(--border); }
-    .items-table tfoot .t-sum-label { text-align: center; letter-spacing: 8px; color: var(--ink); }
     .c-no { width: 5%; text-align: center; color: var(--ink-muted); }
-    .c-name { width: 24%; padding-left: 10px; }
-    .c-spec { width: 21%; text-align: center; font-size: 8.5pt; }
+    .c-name { width: 21%; padding-left: 10px; }
+    .c-code { font-size: 8.5pt; color: var(--ink); }
+    .c-spec { width: 20%; text-align: center; font-size: 8.5pt; }
     .c-unit { width: 6%; text-align: center; }
-    .c-qty { width: 8%; text-align: right; padding-right: 10px; }
-    .c-price { width: 11%; text-align: right; padding-right: 10px; }
+    .c-qty { width: 9%; text-align: right; padding-right: 10px; }
+    .c-price { width: 10%; text-align: right; padding-right: 10px; }
     .c-amount { width: 13%; text-align: right; padding-right: 10px; font-weight: 500; }
-    .c-tax { width: 12%; text-align: right; padding-right: 10px; color: var(--ink-light); }
+    .c-tax { width: 11%; text-align: right; padding-right: 10px; color: var(--ink-light); }
+    body.관급 .c-no { width: 6%; }
+    body.관급 .c-name { width: 23%; }
+    body.관급 .c-spec { width: 24%; }
+    body.관급 .c-unit { width: 7%; }
+    body.관급 .c-remark { display: none; }
     .summary-section { display: flex; border-top: 3px solid var(--accent); padding-top: 3px; background: #fff; }
     .summary-left { flex: 1; padding: 14px 16px; }
     .summary-right { width: 300px; flex-shrink: 0; }
@@ -118,27 +87,15 @@
     .summary-box tr.total-row td { background: var(--accent); color: #fff; border-bottom: none; }
     .summary-box tr.total-row .sum-label { background: var(--accent); color: rgba(255,255,255,0.8); border-right: 1px solid rgba(255,255,255,0.2); font-weight: 700; }
     .summary-box tr.total-row .sum-value { font-size: 13pt; font-weight: 900; letter-spacing: 1px; }
-
-    /* 비고 + 인수자 (서명) 나란히 */
     .note-section { padding: 14px 16px; border-top: 1px solid var(--border-light); }
     .note-section .label { font-size: 9pt; font-weight: 700; color: var(--ink); margin-bottom: 6px; }
-    .note-flex { display: flex; gap: 12px; align-items: stretch; }
-    .note-col { flex: 1; display: flex; flex-direction: column; }
-    .receiver-col { width: 200px; flex-shrink: 0; display: flex; flex-direction: column; }
-    .note-box { background: var(--bg-warm); border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 4px; padding: 10px 14px; min-height: 60px; font-size: 9pt; color: var(--ink); margin-top: 6px; white-space: pre-wrap; line-height: 1.6; flex: 1; }
-    .sign-hint { font-weight: 400; color: var(--ink-muted); font-size: 8.5pt; }
-    .sign-box { background: #fff; border: 1px solid var(--border); border-radius: 4px; margin-top: 6px; min-height: 60px; flex: 1; }
+    .note-box { background: var(--bg-warm); border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 4px; padding: 10px 14px; min-height: 60px; font-size: 9pt; color: var(--ink); margin-top: 6px; white-space: pre-wrap; line-height: 1.6; }
     .company-logo { text-align: center; padding-top: 15vh; padding-bottom: 10px; }
     .company-logo img { height: 50px; }
 
-    /* 로딩/오류 */
     #status { padding: 4rem; text-align: center; font-size: 1rem; color: #6b7280; }
     #status.error { color: #dc2626; }
-
-    /* 샘플 모드 배너 (인쇄 시 숨김) */
-    .sample-banner { display: none; background: #fef3c7; color: #92400e; border-bottom: 1px solid #f59e0b; text-align: center; padding: 8px 16px; font-size: 10pt; font-weight: 500; letter-spacing: 0.5px; }
-
-    /* 인쇄 컨트롤 (인쇄 시 숨김) */
+    .sample-banner { display: none; background: #fef3c7; color: #92400e; border-bottom: 1px solid #fbbf24; text-align: center; padding: 9px 16px; font-size: 0.85rem; font-weight: 500; }
     .print-controls { position: fixed; top: 1rem; right: 1rem; display: flex; gap: 0.5rem; z-index: 100; }
     .print-controls button { padding: 0.5rem 1rem; font-size: 0.875rem; border-radius: 0.375rem; border: none; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
     .print-controls .print-btn { background: #2d3748; color: white; }
@@ -147,78 +104,47 @@
   </style>
 </head>
 <body>
-  <div class="sample-banner" id="sampleBanner">시안 미리보기 — 샘플 데이터입니다</div>
   <div class="print-controls">
     <button class="print-btn" onclick="window.print()">인쇄</button>
     <button class="close-btn" onclick="window.close()">닫기</button>
   </div>
+  <div id="sampleBanner" class="sample-banner">시안 미리보기 — 내장 샘플</div>
   <div id="status">불러오는 중...</div>
-  <div id="statementContent" style="display:none;"></div>
+  <div id="content" style="display:none;"></div>
 
   <script>
     const GAS_URL = 'https://script.google.com/macros/s/AKfycbxM128rPA6TSQltBIOuiB2zGQB--n9S-V93jNLGxTLJZnwBpUMfgiG1BMZDwCXufW2f/exec';
 
-    // 내장 샘플 데이터 (250624 거래명세서 실물 기반, 연도만 2026)
+    // 사급 샘플 (관급은 GAS에서 받아 검증)
     const SAMPLE_DATA = {
       ok: true,
-      주문: { 주문번호: 'B-26-0624001', 주문성격: '사급', 거래처: '㈜효덕산업', 사업명: '방초매트 납품', 부가세포함: false, 일자: '2026-06-24' },
-      공급자: { 상호: '두발로㈜', 사업자등록번호: '769-86-01460', 대표자: '박대근', 주소: '경기도 양주시 광적면 광적로 221-8', 업태: '제조업', 종목: '특수직물 직조업', 전화: '031-866-8872', 팩스: '-' },
-      담당자: { 이름: '박형우', 전화: '010-1234-5678' },
+      주문번호: 'B-26-0611001',
+      구분: '사급',
+      거래: { 날짜: '2026년 06월 11일', 거래처: '서원컴퍼니', 사업명: '제이드가든 보행매트 보수' },
+      공급자: {
+        상호: '두발로 주식회사', 주소: '경기도 양주시 광적면 광적로 221-8',
+        사업자등록번호: '769-86-01460', 대표자: '박대근',
+        업태: '제조업', 종목: '특수직물 직조업', 전화: '031-866-8872', 팩스: '-',
+        송금계좌: '국민은행 884401-04-251937 (주식회사 두발로)'
+      },
       품목: [
-        { no: 1, 품명: 'DBTEX-B500 (방초매트)', 규격: '1m × 50m (500g/㎡)', 단위: '롤', 수량: 8, 단가: 150000, 공급가: 1200000, 세액: 120000 }
+        { no:1, 품명:'보행매트 DB-1000', 물품식별번호:'', 규격:'w1000 × t30mm', 단위:'m', 수량:120, 단가:38000, 금액:4560000, 부가세:456000 },
+        { no:2, 품명:'고정핀 DB-GP2',    물품식별번호:'', 규격:'Φ8 × L200mm',   단위:'개', 수량:200, 단가:600,   금액:120000,  부가세:12000  }
       ],
-      합계: { 공급가합: 1200000, 세액합: 120000, 총액: 1320000 }
+      담당자: { 이름: '박형우', 전화: '010-1234-5678' },
+      비고: '',
+      공급대가: 4680000, 부가세합계: 468000, 합계금액: 5148000
     };
 
     function escapeHtml(s) {
       return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     }
-    function fmt(n) {
-      return Number(n || 0).toLocaleString('ko-KR');
-    }
-
-    // 'yyyy-MM-dd' → 'yyyy년 MM월 dd일'
-    function fmtDate(s) {
-      const m = String(s || '').match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-      if (!m) return String(s || '');
-      return m[1] + '년 ' + m[2].padStart(2, '0') + '월 ' + m[3].padStart(2, '0') + '일';
-    }
-
-    // 숫자 → 한글 금액 (일/이/...구 + 십/백/천 + 만/억/조, '일' 명기 방식)
-    // 예: 1320000 → '일백삼십이만', 0 → '영'
-    function numToKorean(n) {
-      n = Math.floor(Math.abs(Number(n) || 0));
-      if (n === 0) return '영';
-      const digits = ['', '일', '이', '삼', '사', '오', '육', '칠', '팔', '구'];
-      const smallUnits = ['', '십', '백', '천'];
-      const groupUnits = ['', '만', '억', '조'];
-      let result = '';
-      let groupIdx = 0;
-      while (n > 0) {
-        let group = n % 10000;
-        if (group > 0) {
-          let groupStr = '';
-          let pos = 0;
-          while (group > 0) {
-            const d = group % 10;
-            if (d > 0) groupStr = digits[d] + smallUnits[pos] + groupStr;
-            group = Math.floor(group / 10);
-            pos++;
-          }
-          result = groupStr + groupUnits[groupIdx] + result;
-        }
-        n = Math.floor(n / 10000);
-        groupIdx++;
-      }
-      return result;
-    }
+    function fmt(n) { return Number(n || 0).toLocaleString('ko-KR'); }
 
     async function load() {
       const params = new URLSearchParams(location.search);
       const orderNo = params.get('주문번호');
-      const isSample = params.get('sample') === '1' || !orderNo;
-
-      if (isSample) {
+      if (!orderNo || params.get('sample') === '1') {
         document.getElementById('sampleBanner').style.display = 'block';
         render(SAMPLE_DATA);
         return;
@@ -228,9 +154,7 @@
         const data = await res.json();
         if (!data.ok) { showError(data.error || '불러오기 실패'); return; }
         render(data);
-      } catch (err) {
-        showError(err.message);
-      }
+      } catch (err) { showError(err.message); }
     }
 
     function showError(msg) {
@@ -240,35 +164,48 @@
     }
 
     function render(d) {
-      const 주문 = d.주문 || {};
-      const 공급자 = d.공급자 || {};
-      const 담당자 = d.담당자 || {};
-      const 합계 = d.합계 || {};
-      const vatIncluded = 주문.부가세포함 === true || 주문.부가세포함 === 'true' || 주문.부가세포함 === 'TRUE';
+      document.title = `거래명세서 - ${d.거래.거래처 || ''}`;
+      document.body.classList.add(d.구분);
 
-      document.title = `거래명세서 - ${주문.거래처 || ''}`;
-      if (주문.주문성격) document.body.classList.add(주문.주문성격);
+      const itemHeaderRemark = d.구분 === '사급'
+        ? '<th class="c-tax">부가세</th>'
+        : '<th class="c-remark">비고</th>';
+      const itemHeaderName = d.구분 === '관급'
+        ? '<th class="c-name">품명 (물품식별번호)</th>'
+        : '<th class="c-name">품명</th>';
 
-      const itemRows = (d.품목 || []).map(it => `
-        <tr>
-          <td class="c-no">${escapeHtml(it.no)}</td>
-          <td class="c-name">${escapeHtml(it.품명)}</td>
-          <td class="c-spec">${escapeHtml(it.규격)}</td>
-          <td class="c-unit">${escapeHtml(it.단위)}</td>
-          <td class="c-qty">${fmt(it.수량)}</td>
-          <td class="c-price">${fmt(it.단가)}</td>
-          <td class="c-amount">${fmt(it.공급가)}</td>
-          <td class="c-tax">${vatIncluded ? '-' : fmt(it.세액)}</td>
-        </tr>
-      `).join('');
-
-      const summaryRows = vatIncluded
-        ? `<tr class="total-row"><td class="sum-label">합계금액</td><td class="sum-value">₩ ${fmt(합계.총액)}</td></tr>`
-        : `
-          <tr><td class="sum-label">공급가액</td><td class="sum-value">₩ ${fmt(합계.공급가합)}</td></tr>
-          <tr><td class="sum-label">세액</td><td class="sum-value">₩ ${fmt(합계.세액합)}</td></tr>
-          <tr class="total-row"><td class="sum-label">합계금액</td><td class="sum-value">₩ ${fmt(합계.총액)}</td></tr>
+      const itemRows = d.품목.map(it => {
+        const codePart = (d.구분 === '관급' && it.물품식별번호)
+          ? ` <span class="c-code">(${escapeHtml(it.물품식별번호)})</span>`
+          : '';
+        const remarkOrTax = d.구분 === '사급'
+          ? `<td class="c-tax">${fmt(it.부가세)}</td>`
+          : `<td class="c-remark"></td>`;
+        return `
+          <tr>
+            <td class="c-no">${it.no}</td>
+            <td class="c-name">${escapeHtml(it.품명)}${codePart}</td>
+            <td class="c-spec">${escapeHtml(it.규격)}</td>
+            <td class="c-unit">${escapeHtml(it.단위)}</td>
+            <td class="c-qty">${fmt(it.수량)}</td>
+            <td class="c-price">${fmt(it.단가)}</td>
+            <td class="c-amount">${fmt(it.금액)}</td>
+            ${remarkOrTax}
+          </tr>
         `;
+      }).join('');
+
+      const summaryRows = d.구분 === '사급'
+        ? `
+          <tr><td class="sum-label">공급대가</td><td class="sum-value">₩ ${fmt(d.공급대가)}</td></tr>
+          <tr><td class="sum-label">부가세</td><td class="sum-value">₩ ${fmt(d.부가세합계)}</td></tr>
+          <tr class="total-row"><td class="sum-label">합계금액</td><td class="sum-value">₩ ${fmt(d.합계금액)}</td></tr>
+        `
+        : `<tr class="total-row"><td class="sum-label">합계금액</td><td class="sum-value">₩ ${fmt(d.합계금액)}</td></tr>`;
+
+      const accountLine = d.구분 === '사급'
+        ? `<div><strong>입금계좌</strong>&emsp;${escapeHtml(d.공급자.송금계좌)}</div>`
+        : '';
 
       const sealImg = `<img src="/assets/img/seal.png" alt="인감">`;
       const logoImg = `<img src="/assets/img/logo.png" alt="로고">`;
@@ -277,16 +214,14 @@
         <div class="page">
           <div class="doc-title">
             <h1>거 래 명 세 서</h1>
-            <div class="doc-type">${escapeHtml(주문.주문성격)}자재</div>
           </div>
 
           <div class="header-section">
             <div class="trade-info">
-              <div class="date">${escapeHtml(fmtDate(주문.일자))}</div>
-              <div class="client">${escapeHtml(주문.거래처)}<span class="honorific">귀하</span></div>
+              <div class="date">${escapeHtml(d.거래.날짜)}</div>
+              <div class="client">${escapeHtml(d.거래.거래처)}<span class="honorific">귀하</span></div>
               <dl>
-                <dt>사업명</dt><dd>${escapeHtml(주문.사업명)}</dd>
-                <dt>주문번호</dt><dd>${escapeHtml(주문.주문번호)}</dd>
+                <dt>사업명</dt><dd>${escapeHtml(d.거래.사업명)}</dd>
               </dl>
               <div class="statement">아래와 같이 계산합니다.</div>
             </div>
@@ -294,78 +229,51 @@
               <div class="supplier-label">공급자</div>
               <div class="supplier-grid">
                 <table>
-                  <tr><td class="s-label">소재지</td><td class="s-value" colspan="3">${escapeHtml(공급자.주소)}</td></tr>
-                  <tr><td class="s-label">사업자번호</td><td class="s-value" colspan="3">${escapeHtml(공급자.사업자등록번호)}</td></tr>
-                  <tr><td class="s-label">상호</td><td class="s-value" colspan="3">${escapeHtml(공급자.상호)}</td></tr>
-                  <tr><td class="s-label">성명</td><td class="s-value" colspan="3">${escapeHtml(공급자.대표자)}</td></tr>
-                  <tr><td class="s-label">업태/종목</td><td class="s-value" colspan="3">${escapeHtml(공급자.업태)} / ${escapeHtml(공급자.종목)}</td></tr>
-                  <tr><td class="s-label">전화</td><td class="s-value" colspan="3">${escapeHtml(공급자.전화)}</td></tr>
-                  <tr><td class="s-label">팩스</td><td class="s-value" colspan="3">${escapeHtml(공급자.팩스)}</td></tr>
+                  <tr><td class="s-label">소재지</td><td class="s-value" colspan="3">${escapeHtml(d.공급자.주소)}</td></tr>
+                  <tr><td class="s-label">사업자번호</td><td class="s-value" colspan="3">${escapeHtml(d.공급자.사업자등록번호)}</td></tr>
+                  <tr><td class="s-label">상호</td><td class="s-value" colspan="3">${escapeHtml(d.공급자.상호)}</td></tr>
+                  <tr><td class="s-label">성명</td><td class="s-value" colspan="3">${escapeHtml(d.공급자.대표자)}</td></tr>
+                  <tr><td class="s-label">업태/종목</td><td class="s-value" colspan="3">${escapeHtml(d.공급자.업태)} / ${escapeHtml(d.공급자.종목)}</td></tr>
+                  <tr><td class="s-label">전화</td><td class="s-value" colspan="3">${escapeHtml(d.공급자.전화)}</td></tr>
+                  <tr><td class="s-label">팩스</td><td class="s-value" colspan="3">${escapeHtml(d.공급자.팩스)}</td></tr>
                 </table>
               </div>
               <div class="seal-img">${sealImg}</div>
             </div>
           </div>
 
-          <div class="total-band">
-            <span class="tb-label">합계금액</span>
-            <span class="tb-amount">₩ ${fmt(합계.총액)}<span class="tb-won">원정</span></span>
-            <span class="tb-korean">(일금 ${escapeHtml(numToKorean(합계.총액))} 원정)</span>
-          </div>
-
           <table class="items-table">
             <thead>
               <tr>
                 <th class="c-no">No.</th>
-                <th class="c-name">품명</th>
+                ${itemHeaderName}
                 <th class="c-spec">규격</th>
                 <th class="c-unit">단위</th>
                 <th class="c-qty">수량</th>
                 <th class="c-price">단가</th>
-                <th class="c-amount">공급가액</th>
-                <th class="c-tax">세액</th>
+                <th class="c-amount">금액</th>
+                ${itemHeaderRemark}
               </tr>
             </thead>
             <tbody>${itemRows}</tbody>
-            <tfoot>
-              <tr>
-                <td colspan="6" class="t-sum-label">계</td>
-                <td class="c-amount">${fmt(합계.공급가합)}</td>
-                <td class="c-tax">${vatIncluded ? '-' : fmt(합계.세액합)}</td>
-              </tr>
-            </tfoot>
           </table>
 
-          <div class="summary-section">
-            <div class="summary-left">
-              <div class="label">거래 안내</div>
-              <div class="footer-box">
-                <div><strong>담당자</strong>&emsp;${escapeHtml(담당자.이름)}&emsp;${escapeHtml(담당자.전화)}</div>
-              </div>
-            </div>
+          <div class="summary-section" style="justify-content:flex-end;">
             <div class="summary-right">
               <table class="summary-box">${summaryRows}</table>
             </div>
           </div>
 
           <div class="note-section">
-            <div class="note-flex">
-              <div class="note-col">
-                <div class="label">비고</div>
-                <div class="note-box">${escapeHtml(d.비고) || '&nbsp;'}</div>
-              </div>
-              <div class="receiver-col">
-                <div class="label">인수자 <span class="sign-hint">(서명)</span></div>
-                <div class="sign-box"></div>
-              </div>
-            </div>
+            <div class="label">비고</div>
+            <div class="note-box">${escapeHtml(d.비고) || '&nbsp;'}</div>
           </div>
 
           <div class="company-logo">${logoImg}</div>
         </div>
       `;
       document.getElementById('status').style.display = 'none';
-      const c = document.getElementById('statementContent');
+      const c = document.getElementById('content');
       c.innerHTML = html;
       c.style.display = 'block';
     }

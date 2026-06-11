@@ -23,6 +23,30 @@ const PRICE_DB_TABS = {
 // GAS Web App (시트 쓰기)
 const GAS_WRITE_URL = 'https://script.google.com/macros/s/AKfycbxM128rPA6TSQltBIOuiB2zGQB--n9S-V93jNLGxTLJZnwBpUMfgiG1BMZDwCXufW2f/exec';
 
+// ===== 시간 입력 (시/분 select 2개) — 모든 도착시간 폼이 동일 패턴 =====
+const HOUR_OPTS = '<option value="">--시</option>' + Array.from({length:24}, (_,i)=>{const v=String(i).padStart(2,'0');return `<option value="${v}">${v}시</option>`}).join('');
+const MIN_OPTS  = '<option value="">--분</option>' + ['00','10','20','30','40','50'].map(m=>`<option value="${m}">${m}분</option>`).join('');
+function initTimePicker(hId, mId) {
+    const h = document.getElementById(hId), m = document.getElementById(mId);
+    if (h && h.dataset.inited !== '1') { h.innerHTML = HOUR_OPTS; h.dataset.inited = '1'; }
+    if (m && m.dataset.inited !== '1') { m.innerHTML = MIN_OPTS;  m.dataset.inited = '1'; }
+}
+function setTimeValue(hId, mId, val) {
+    initTimePicker(hId, mId);
+    const h = document.getElementById(hId), m = document.getElementById(mId);
+    if (!val) { if(h) h.value=''; if(m) m.value=''; return; }
+    const [hh='', mm=''] = String(val).split(':');
+    if (h) h.value = hh.padStart(2,'0');
+    if (m) m.value = mm.padStart(2,'0');
+}
+function getTimeValue(hId, mId) {
+    const h = document.getElementById(hId)?.value || '';
+    const m = document.getElementById(mId)?.value || '';
+    // 시·분 둘 다 채워져야 유효한 시간. 하나라도 비면 '' → 송장에 '당착'
+    if (!h || !m) return '';
+    return `${h.padStart(2,'0')}:${m.padStart(2,'0')}`;
+}
+
 let priceTable = { publicPrices: [], privatePrices: [] };
 let lineCounter = 0;
 let deliveryCounter = 0;
@@ -198,19 +222,22 @@ function joinDeals(s) {
             lines: delLinesByDel.get(dlv.배송번호) || []
         }));
 
-        // 품목별 잔여수량 (주문수량 - 모든 배차 합)
+        // 품목별 잔여수량 (주문수량 - 모든 배차 합). 키 = 품명 (규격·단위는 주문품목 단일 진실)
         const remainingByItem = {};
         lines.forEach(l => {
-            const k = `${(l.품명||'').trim()}|${(l.규격||'').trim()}`;
-            remainingByItem[k] = {
-                품명: l.품명, 규격: l.규격, 단위: l.단위,
-                주문수량: Number(l.수량) || 0,
-                잔여: Number(l.수량) || 0
-            };
+            const k = (l.품명||'').trim();
+            if (!remainingByItem[k]) {
+                remainingByItem[k] = {
+                    품명: l.품명, 규격: l.규격, 단위: l.단위,
+                    주문수량: 0, 잔여: 0
+                };
+            }
+            remainingByItem[k].주문수량 += (Number(l.수량) || 0);   // 같은 품명 여러 라인은 합산
+            remainingByItem[k].잔여 += (Number(l.수량) || 0);
         });
         deliveries.forEach(dlv => {
             (dlv.lines || []).forEach(ll => {
-                const k = `${(ll.품명||'').trim()}|${(ll.규격||'').trim()}`;
+                const k = (ll.품명||'').trim();
                 if (remainingByItem[k]) {
                     remainingByItem[k].잔여 -= (Number(ll.수량) || 0);
                 }
@@ -505,7 +532,7 @@ function openNonSalesDeliveryPanel() {
     form.reset();
     document.getElementById('nsLineBody').innerHTML = '';
     document.getElementById('nsDeliveryDate').value = new Date().toISOString().slice(0, 10);
-    document.getElementById('nsDeliveryTime').value = '08:00';
+    setTimeValue('nsHour', 'nsMin', '08:00');
     document.getElementById('nsTransport').value = '직배';
     addNonSalesLineRow();
     document.getElementById('newNonSalesPanel').classList.add('open');
@@ -581,7 +608,7 @@ async function onNonSalesSubmit(e) {
             공급자: document.getElementById('nsSupplier').value,
             delivery: {
                 배송일자: document.getElementById('nsDeliveryDate').value,
-                배송시간: document.getElementById('nsDeliveryTime').value,
+                배송시간: getTimeValue('nsHour', 'nsMin'),
                 주소: document.getElementById('nsAddress').value.trim(),
                 주소링크: document.getElementById('nsAddressLink').value.trim(),
                 인수자명: document.getElementById('nsReceiverName').value.trim(),
@@ -764,9 +791,10 @@ function showDealModal(dealId) {
                     `}
                 </div>
                 <span style="display:flex; gap:0.375rem; align-items:center;">
-                    ${deal.deliveries.length === 0
-                        ? '<button class="btn btn-warning btn-sm" id="printInvoiceDocBtn" disabled title="Phase 4-2에서 활성화">거래명세서</button>'
-                        : '<button class="btn btn-warning btn-sm" id="printDeliveryConfirmBtn" disabled title="Phase 4-3에서 활성화">납품확인서</button>'
+                    <button class="btn btn-sm" id="printStatementBtn" data-deal-id="${escapeHtml(deal.주문번호)}" title="거래명세서 출력 (A4 1장)" style="background:#fff; color:#ea580c; border:1px solid #ea580c;">거래명세서</button>
+                    ${deal.deliveries.length > 0
+                        ? '<button class="btn btn-warning btn-sm" id="printDeliveryConfirmBtn" disabled title="Phase 4-3에서 활성화">납품확인서</button>'
+                        : ''
                     }
                     <button class="btn btn-secondary btn-sm" id="editDealBtn" data-deal-id="${escapeHtml(deal.주문번호)}">주문 수정</button>
                     ${deal.totalRemaining > 0.001
@@ -779,6 +807,11 @@ function showDealModal(dealId) {
     `;
 
     CommonUtils.showModal(parseOrderDate(deal.주문번호) || deal.주문번호, html, { width: '900px' });
+    // 거래명세서 출력 (새 탭)
+    document.getElementById('printStatementBtn').addEventListener('click', (e) => {
+        const dealNo = e.currentTarget.dataset.dealId;
+        window.open(`statement-print.html?주문번호=${encodeURIComponent(dealNo)}`, '_blank');
+    });
     // 주문 수정 버튼
     document.getElementById('editDealBtn').addEventListener('click', () => {
         const target = joinedDeals.find(d => d.주문번호 === deal.주문번호);
@@ -1701,20 +1734,21 @@ let deliveryEditMode = null;     // null = 신규, 배송 객체 = 편집
 let submitInProgress = false;    // 저장 중복 클릭 차단
 let dispatchSerial = 0;          // 폼 안 배차 블록 일련 번호 (DOM id 발급용)
 
-// 품목 키 = "품명|규격"
-function itemKey(품명, 규격) { return `${(품명||'').trim()}|${(규격||'').trim()}`; }
+// 품목 키 = 품명만 (규격·단위는 주문품목 시트가 단일 진실 — 배차에 복사 안 함)
+function itemKey(품명) { return (품명||'').trim(); }
 
 // 주문 기준 품목별 잔여수량 맵 — 시트에 이미 저장된 배차까지 차감한 상태
 // 편집 모드일 때는 자기 자신의 기존 배차는 빼고 계산 (그래야 자기 배차 수량까지 잔여로 잡힘)
 function baseRemainingMap(deal) {
     const map = {};
     deal.lines.forEach(l => {
-        map[itemKey(l.품명, l.규격)] = (Number(l.수량) || 0);
+        const k = itemKey(l.품명);
+        map[k] = (map[k] || 0) + (Number(l.수량) || 0);   // 같은 품명 여러 라인이면 합산
     });
     deal.deliveries.forEach(dlv => {
         if (deliveryEditMode && dlv.배송번호 === deliveryEditMode.배송번호) return; // 편집 대상은 제외
         (dlv.lines || []).forEach(ll => {
-            const k = itemKey(ll.품명, ll.규격);
+            const k = itemKey(ll.품명);
             if (k in map) map[k] -= (Number(ll.수량) || 0);
         });
     });
@@ -1760,38 +1794,43 @@ function openDeliveryPanel(deal, existing = null) {
         titleEl.textContent = `배송 수정 — ${existing.배송번호}`;
         submitBtn.textContent = '수정 저장';
         document.getElementById('deliveryNumber').value = existing.배송번호;
+        document.getElementById('deliveryShipDate').value = existing.출고일자 || '';
         document.getElementById('deliveryDate').value = existing.배송일자 || '';
-        document.getElementById('deliveryTime').value = existing.배송시간 || '08:00';
-        document.getElementById('deliveryAddress').value = existing.주소 || '';
-        document.getElementById('deliveryAddressLink').value = existing.주소링크 || '';
+        setTimeValue('deliveryHour', 'deliveryMin', existing.배송시간 || '');
         document.getElementById('deliveryReceiverName').value = existing.인수자명 || '';
         document.getElementById('deliveryReceiverPhone').value = existing.인수자전화 || '';
         document.getElementById('deliveryMemo').value = existing.비고 || '';
 
-        // 기존 배차 라인을 라인번호별로 그룹핑해서 배차 블록 만들기
+        // 기존 배차 라인을 라인번호별로 그룹핑해서 배차 블록 만들기 (주소·주소링크는 배차 시트)
         const groups = {};
         (existing.lines || []).forEach(l => {
             const k = l.라인번호 || 1;
-            if (!groups[k]) groups[k] = { 차종: l.차종 || '', 배송구분: l.배송구분 || '직배', items: [] };
+            if (!groups[k]) groups[k] = {
+                차종: l.차종 || '',
+                배송구분: l.배송구분 || '직배',
+                주소: l.주소 || '',
+                주소링크: l.주소링크 || '',
+                items: []
+            };
             groups[k].items.push(l);
         });
         const groupKeys = Object.keys(groups).sort((a, b) => Number(a) - Number(b));
         if (groupKeys.length === 0) {
             addDispatchBlock();
         } else {
-            groupKeys.forEach(k => addDispatchBlock(groups[k]));
+            groupKeys.forEach(k => addDispatchBlock(groups[k], { 배송번호: existing.배송번호 }));
         }
     } else {
         // 신규 모드
         titleEl.textContent = '배송 등록';
         submitBtn.textContent = '저장';
         document.getElementById('deliveryNumber').value = '';
-        document.getElementById('deliveryDate').value = new Date().toISOString().slice(0, 10);
-        document.getElementById('deliveryTime').value = '08:00';
-        if (deal.org?.주소) {
-            document.getElementById('deliveryAddress').value = deal.org.주소;
-        }
-        addDispatchBlock();
+        const today = new Date().toISOString().slice(0, 10);
+        document.getElementById('deliveryShipDate').value = today;
+        document.getElementById('deliveryDate').value = today;
+        setTimeValue('deliveryHour', 'deliveryMin', '08:00');
+        // 첫 배차 주소 디폴트는 거래처 주소 (없으면 빈칸)
+        addDispatchBlock({ 주소: deal.org?.주소 || '', 주소링크: '' });
     }
 
     document.getElementById('newDeliveryPanel').classList.add('open');
@@ -1809,15 +1848,26 @@ function isDeliveryFormOpen() {
 }
 
 // ===== 배차 블록 동적 추가 =====
-// prepopulate: { 차종, items: [{품명, 규격, 수량, 단위}] } (편집 모드용)
-function addDispatchBlock(prepopulate = null) {
+// prepopulate: { 차종, 배송구분, 주소, 주소링크, items: [...] } (편집/신규 디폴트 공용)
+// meta: { 배송번호 } - 편집 모드일 때 송장 출력 버튼 활성화
+function addDispatchBlock(prepopulate = null, meta = null) {
     if (!currentDeliveryDeal) return;
     const remaining = currentRemainingMap(currentDeliveryDeal);
-    if (!prepopulate) {
+    const hasItems = prepopulate && prepopulate.items && prepopulate.items.length;
+    if (!hasItems) {
         const anyLeft = Object.values(remaining).some(v => v > 0.001);
         if (!anyLeft) {
             alert('이 주문은 잔여 수량이 없어 더 배차할 수 없습니다.');
             return;
+        }
+        // 새 배차: 직전 배차의 주소·주소링크를 디폴트로 복사 (prepopulate가 비어있을 때만)
+        if (!prepopulate || (prepopulate.주소 === undefined && prepopulate.주소링크 === undefined)) {
+            const lastBlock = document.querySelector('#dispatchList .dispatch-block:last-child');
+            if (lastBlock) {
+                prepopulate = prepopulate || {};
+                prepopulate.주소 = lastBlock.querySelector('.dispatch-address')?.value || '';
+                prepopulate.주소링크 = lastBlock.querySelector('.dispatch-address-link')?.value || '';
+            }
         }
     }
 
@@ -1827,15 +1877,13 @@ function addDispatchBlock(prepopulate = null) {
     block.className = 'dispatch-block';
     block.dataset.dispatchIdx = idx;
 
-    // prepopulate가 있으면 그 수량으로, 없으면 잔여 default
-    const findPrepop = (품명, 규격) => prepopulate?.items.find(it =>
-        (it.품명 || '') === (품명 || '') && (it.규격 || '') === (규격 || '')
-    );
+    // prepopulate가 있으면 그 수량으로, 없으면 잔여 default. 매칭은 품명만.
+    const findPrepop = (품명) => prepopulate?.items?.find(it => (it.품명 || '') === (품명 || ''));
 
     const linesHtml = currentDeliveryDeal.lines.map(l => {
-        const k = itemKey(l.품명, l.규격);
+        const k = itemKey(l.품명);
         const rem = Math.max(0, remaining[k] || 0);
-        const pre = findPrepop(l.품명, l.규격);
+        const pre = findPrepop(l.품명);
         const defaultQty = pre ? (Number(pre.수량) || '') : (rem || '');
         return `
             <tr class="dispatch-line" data-item-key="${escapeHtml(k)}" data-order-qty="${l.수량 || 0}">
@@ -1864,15 +1912,36 @@ function addDispatchBlock(prepopulate = null) {
             ${vtOptions.map(o => `<option value="${o}" ${o === vt ? 'selected' : ''}>${o}</option>`).join('')}
         </select>
     `;
+    const addrVal = prepopulate?.주소 || '';
+    const addrLinkVal = prepopulate?.주소링크 || '';
+    const canPrint = !!(meta && meta.배송번호);
+    const printBtn = canPrint
+        ? `<button type="button" class="btn btn-warning print-invoice-btn" style="font-size:0.75rem; padding:0.25rem 0.5rem;" data-delivery-id="${escapeHtml(meta.배송번호)}" data-dispatch-no="${idx}" title="이 배차(차량)의 송장 출력">송장 출력</button>`
+        : `<button type="button" class="btn btn-secondary print-invoice-btn" style="font-size:0.75rem; padding:0.25rem 0.5rem;" disabled title="저장 후 사용 가능">송장 출력</button>`;
+
     block.innerHTML = `
         <div class="dispatch-head">
             <span class="dispatch-title">배차 ${idx}</span>
             <span class="dispatch-actions">
                 ${transSelectHtml}
                 ${vtSelectHtml}
-                <button type="button" class="btn btn-secondary print-invoice-btn" style="font-size:0.75rem; padding:0.25rem 0.5rem;" disabled title="Phase 4에서 활성화">송장 출력</button>
+                ${printBtn}
                 <button type="button" class="btn btn-secondary remove-dispatch-btn" style="font-size:0.75rem; padding:0.25rem 0.5rem;" title="배차 삭제">×</button>
             </span>
+        </div>
+        <div class="dispatch-address-row" style="display:grid; grid-template-columns: 1fr auto 1fr; gap:0.5rem; margin:0.5rem 0; align-items:end;">
+            <div>
+                <label style="font-size:0.7rem; color:#6b7280;">도착 주소</label>
+                <div style="display:flex; gap:0.25rem;">
+                    <input class="dispatch-address" placeholder="경기도 의정부시 신곡동 773-1" style="flex:1; padding:0.25rem 0.5rem; border:1px solid #d1d5db; border-radius:0.25rem; font-size:0.8125rem;" value="${escapeHtml(addrVal)}">
+                    <button type="button" class="btn btn-secondary dispatch-map-btn" style="font-size:0.75rem; padding:0.25rem 0.5rem; white-space:nowrap;">지도 검색</button>
+                </div>
+            </div>
+            <div style="align-self:end; color:#9ca3af; padding-bottom:0.4rem;">·</div>
+            <div>
+                <label style="font-size:0.7rem; color:#6b7280;">주소링크 <span style="color:#9ca3af;">(naver.me)</span></label>
+                <input class="dispatch-address-link" placeholder="https://naver.me/..." style="width:100%; padding:0.25rem 0.5rem; border:1px solid #d1d5db; border-radius:0.25rem; font-size:0.8125rem;" value="${escapeHtml(addrLinkVal)}">
+            </div>
         </div>
         <table class="dispatch-lines">
             <thead>
@@ -1894,6 +1963,17 @@ function addDispatchBlock(prepopulate = null) {
         renumberDispatches();
         refreshRemainingDisplays();
     });
+    block.querySelector('.dispatch-map-btn').addEventListener('click', () => {
+        const a = block.querySelector('.dispatch-address').value.trim();
+        if (!a) { alert('주소를 먼저 입력하세요'); return; }
+        window.open(`https://map.naver.com/v5/search/${encodeURIComponent(a)}`, '_blank');
+    });
+    if (canPrint) {
+        block.querySelector('.print-invoice-btn').addEventListener('click', (e) => {
+            const b = e.currentTarget;
+            window.open(`invoice-print.html?배송번호=${encodeURIComponent(b.dataset.deliveryId)}&배차=${encodeURIComponent(b.dataset.dispatchNo)}`, '_blank');
+        });
+    }
     block.querySelectorAll('.qty-input').forEach(input => {
         input.addEventListener('input', refreshRemainingDisplays);
     });
@@ -1952,10 +2032,9 @@ function collectDeliveryData() {
     const delivery = {
         배송번호: document.getElementById('deliveryNumber').value || '',
         거래번호: deal.주문번호,
+        출고일자: document.getElementById('deliveryShipDate').value,
         배송일자: document.getElementById('deliveryDate').value,
-        배송시간: document.getElementById('deliveryTime').value,
-        주소: document.getElementById('deliveryAddress').value.trim(),
-        주소링크: document.getElementById('deliveryAddressLink').value.trim(),
+        배송시간: getTimeValue('deliveryHour', 'deliveryMin'),
         인수자명: document.getElementById('deliveryReceiverName').value.trim(),
         인수자전화: document.getElementById('deliveryReceiverPhone').value.trim(),
         비고: document.getElementById('deliveryMemo').value.trim()
@@ -1966,19 +2045,20 @@ function collectDeliveryData() {
     blocks.forEach((block, dispatchIdx) => {
         const 차종 = block.querySelector('.vehicle-type-input').value.trim();
         const 배송구분 = block.querySelector('.dispatch-transport').value.trim();
+        const 주소 = block.querySelector('.dispatch-address').value.trim();
+        const 주소링크 = block.querySelector('.dispatch-address-link').value.trim();
         block.querySelectorAll('.dispatch-line').forEach(tr => {
             const qty = parseFloat(tr.querySelector('.qty-input').value) || 0;
             if (qty <= 0) return;
-            const [품명, 규격] = tr.dataset.itemKey.split('|');
-            const unit = tr.querySelector('td:nth-child(4)').textContent.trim();
+            const 품명 = tr.dataset.itemKey;   // 키 = 품명만. 규격·단위는 주문품목에서 참조
             lines.push({
                 라인번호: dispatchIdx + 1,
                 배송구분,
                 차종,
+                주소,
+                주소링크,
                 품명,
-                규격,
                 수량: qty,
-                단위: unit,
                 비고: ''
             });
         });
@@ -2048,7 +2128,6 @@ function bindDeliveryFormEvents() {
     document.getElementById('cancelDeliveryBtn').addEventListener('click', closeDeliveryPanel);
     document.getElementById('newDeliveryForm').addEventListener('submit', onDeliverySubmit);
     document.getElementById('addDispatchBtn').addEventListener('click', () => addDispatchBlock());
-    document.getElementById('naverMapSearchBtn').addEventListener('click', openNaverMapSearch);
     document.getElementById('deleteDeliveryBtn').addEventListener('click', onDeleteDelivery);
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && isDeliveryFormOpen()) closeDeliveryPanel();

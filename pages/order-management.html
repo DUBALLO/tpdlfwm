@@ -133,7 +133,7 @@
         }
     </style>
     <script src="../assets/js/common.js?v=20260604g"></script>
-    <script src="../assets/js/order-management.js?v=20260611a" defer></script>
+    <script src="../assets/js/order-management.js?v=20260611k" defer></script>
 </head>
 <body class="bg-gray-50 text-gray-800">
     <nav class="bg-white shadow-sm border-b">
@@ -285,7 +285,10 @@
                         </div>
                         <div>
                             <label>도착시간</label>
-                            <input type="time" id="nsDeliveryTime" step="600" value="08:00">
+                            <div class="time-picker" style="display:flex; gap:0.25rem;">
+                                <select id="nsHour" style="flex:1;"></select>
+                                <select id="nsMin" style="flex:1;"></select>
+                            </div>
                         </div>
                         <div class="span-2">
                             <label>인수자</label>
@@ -376,36 +379,29 @@
 
                     <div class="form-grid">
                         <div>
+                            <label>출고일자</label>
+                            <input type="date" id="deliveryShipDate">
+                        </div>
+                        <div>
                             <label>도착일자 *</label>
                             <input type="date" id="deliveryDate" required>
                         </div>
-                        <div>
-                            <label>도착시간</label>
-                            <input type="time" id="deliveryTime" step="600" value="08:00">
-                        </div>
                         <div class="span-2">
+                            <label>도착시간</label>
+                            <div class="time-picker" style="display:flex; gap:0.25rem;">
+                                <select id="deliveryHour" style="flex:1;"></select>
+                                <select id="deliveryMin" style="flex:1;"></select>
+                            </div>
+                        </div>
+                        <div>
                             <label>인수자</label>
                             <input id="deliveryReceiverName" placeholder="이름">
-                        </div>
-
-                        <div class="span-3">
-                            <label>주소</label>
-                            <div style="display:flex; gap:0.25rem;">
-                                <input id="deliveryAddress" placeholder="경기도 의정부시 신곡동 773-1" style="flex:1;">
-                                <button type="button" id="naverMapSearchBtn" class="btn btn-secondary btn-sm" style="white-space:nowrap;">지도 검색</button>
-                            </div>
                         </div>
                         <div>
                             <label>인수자 연락처</label>
                             <input id="deliveryReceiverPhone" placeholder="010-...">
                         </div>
-
-                        <div class="span-4">
-                            <label>주소링크 <span style="color:#9ca3af; font-weight:normal;">(네이버지도에서 공유 → 복사 → 붙여넣기)</span></label>
-                            <input id="deliveryAddressLink" placeholder="https://naver.me/...">
-                        </div>
-
-                        <div class="span-4">
+                        <div class="span-2">
                             <label>비고</label>
                             <textarea id="deliveryMemo" rows="2" placeholder="배송 관련 메모"></textarea>
                         </div>
