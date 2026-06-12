@@ -9766,14 +9766,91 @@ var require_lib3 = __commonJS({
   }
 });
 
-// functions/api/delivery-confirm.js
-var import_jszip = __toESM(require_lib3());
+// delivery-confirm.src.js
+var import_jszip = __toESM(require_lib3(), 1);
 var TEMPLATE_PATH = {
   "\uC11C\uBA85\uC5C6\uC74C": "/assets/templates/delivery-confirm/sign-none.hwpx",
   "\uD604\uC7A5\uC11C\uBA85": "/assets/templates/delivery-confirm/sign-site.hwpx"
 };
+var DYNAMIC_TABLES = [
+  { section: 0, tableIdx: 0, tokenPrefix: "{{\uACF5\uBB38." },
+  { section: 1, tableIdx: 0, tokenPrefix: "{{\uAC80\uC218." }
+];
 function escapeXml(s) {
   return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+function escapeRegex(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+function extractRowCount(tokens, prefix) {
+  const re = new RegExp(`^${escapeRegex(prefix)}(\\d+)\\.`);
+  let max = -1;
+  for (const key of Object.keys(tokens)) {
+    const m = key.match(re);
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  return max + 1;
+}
+function expandTableInSection(xml, tableIdx, tokenPrefix, neededRows) {
+  const tblRegex = /<hp:tbl\b[^>]*>[\s\S]*?<\/hp:tbl>/g;
+  let tblCount = -1;
+  return xml.replace(tblRegex, (tbl) => {
+    tblCount++;
+    if (tblCount !== tableIdx) return tbl;
+    const trRegex = /<hp:tr\b[^>]*>[\s\S]*?<\/hp:tr>/g;
+    const trs = [...tbl.matchAll(trRegex)].map((m) => m[0]);
+    if (trs.length === 0) return tbl;
+    const trRowAddr = (tr) => {
+      const m = tr.match(/<hp:cellAddr[^>]*rowAddr="(\d+)"/);
+      return m ? Number(m[1]) : -1;
+    };
+    const trAddrs = trs.map(trRowAddr);
+    const validAddrs = trAddrs.filter((r) => r >= 0);
+    if (validAddrs.length === 0) return tbl;
+    const maxRowAddr = Math.max(...validAddrs);
+    const dataRowCount = maxRowAddr - 1;
+    if (neededRows <= dataRowCount) return tbl;
+    const goldenRowAddr = dataRowCount;
+    const sumRowAddr = maxRowAddr;
+    const goldenTokenIdx = goldenRowAddr - 1;
+    const addRows = neededRows - dataRowCount;
+    const goldenTrIdx = trAddrs.indexOf(goldenRowAddr);
+    const sumTrIdx = trAddrs.indexOf(sumRowAddr);
+    if (goldenTrIdx < 0 || sumTrIdx < 0) return tbl;
+    const goldenTr = trs[goldenTrIdx];
+    const sumTr = trs[sumTrIdx];
+    const newTrs = [];
+    for (let i = 0; i < addRows; i++) {
+      const newRowAddr = goldenRowAddr + 1 + i;
+      const newTokenIdx = goldenTokenIdx + 1 + i;
+      const newTr = goldenTr.replace(/rowAddr="\d+"/g, `rowAddr="${newRowAddr}"`).replace(
+        new RegExp(`(${escapeRegex(tokenPrefix)})${goldenTokenIdx}(\\.)`, "g"),
+        `$1${newTokenIdx}$2`
+      );
+      newTrs.push(newTr);
+    }
+    const newSumTr = sumTr.replace(
+      /rowAddr="\d+"/g,
+      `rowAddr="${sumRowAddr + addRows}"`
+    );
+    const newTrsArray = [
+      ...trs.slice(0, goldenTrIdx + 1),
+      ...newTrs,
+      newSumTr,
+      ...trs.slice(sumTrIdx + 1)
+    ];
+    const firstTrStart = tbl.indexOf("<hp:tr");
+    const lastTrEnd = tbl.lastIndexOf("</hp:tr>") + "</hp:tr>".length;
+    if (firstTrStart < 0 || lastTrEnd < 0) return tbl;
+    const before = tbl.slice(0, firstTrStart);
+    const after = tbl.slice(lastTrEnd);
+    const newRowCnt = trs.length + addRows;
+    const beforeWithRowCnt = before.replace(
+      /rowCnt="\d+"/,
+      `rowCnt="${newRowCnt}"`
+    );
+    return beforeWithRowCnt + newTrsArray.join("") + after;
+  });
 }
 var onRequestPost = async ({ request, env }) => {
   let payload;
@@ -9795,6 +9872,15 @@ var onRequestPost = async ({ request, env }) => {
   const tokenEntries = Object.entries(tokens).sort((a, b) => b[0].length - a[0].length);
   for (const path of xmlFiles) {
     let xml = await zip.file(path).async("string");
+    const secMatch = path.match(/section(\d+)\.xml$/);
+    const secIdx = secMatch ? Number(secMatch[1]) : -1;
+    for (const cfg of DYNAMIC_TABLES) {
+      if (cfg.section !== secIdx) continue;
+      const neededRows = extractRowCount(tokens, cfg.tokenPrefix);
+      if (neededRows > 0) {
+        xml = expandTableInSection(xml, cfg.tableIdx, cfg.tokenPrefix, neededRows);
+      }
+    }
     for (const [token, value] of tokenEntries) {
       const escVal = escapeXml(value ?? "");
       xml = xml.split(token).join(escVal);
