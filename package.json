@@ -1,9 +1,0 @@
-{
-  "name": "duballo-dashboard",
-  "private": true,
-  "version": "1.0.0",
-  "description": "두발로 대시보드 PWA (정적) + Pages Functions",
-  "dependencies": {
-    "jszip": "^3.10.1"
-  }
-}
