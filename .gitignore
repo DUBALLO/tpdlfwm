@@ -22,5 +22,8 @@ HANDOVER.md
 # 노드 (혹시 나중에 빌드 도구 쓸 경우 대비)
 node_modules/
 
+# wrangler 로컬 dev 캐시
+.wrangler/
+
 # 로그
 *.log

@@ -1,5 +1,5 @@
 // 주문 관리 — 데이터 로드 + 칸반 렌더링 + 새 거래 입력 폼 (Phase 3-3(B))
-console.log('%c[order-management.js v=20260604g 로드됨 — 사업명 거래처 옆으로]', 'color:#10b981; font-weight:bold');
+console.log('%c[order-management.js v=20260612b 로드됨 — 납품확인서 hwpx + 품목별 제목]', 'color:#10b981; font-weight:bold');
 
 const ORDER_DB_BASE = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRum7_WBDKTJSA8B1ATxqpd3BtvjXnPLNQXuMpQsx0q4HVmwm_-JRQLCjy-FrYryIBPuxYkhV7F1nWq/pub';
 const ORDER_DB_TABS = {
@@ -793,7 +793,7 @@ function showDealModal(dealId) {
                 <span style="display:flex; gap:0.375rem; align-items:center;">
                     <button class="btn btn-sm" id="printStatementBtn" data-deal-id="${escapeHtml(deal.주문번호)}" title="거래명세서 출력 (A4 1장)" style="background:#fff; color:#ea580c; border:1px solid #ea580c;">거래명세서</button>
                     ${deal.deliveries.length > 0
-                        ? '<button class="btn btn-warning btn-sm" id="printDeliveryConfirmBtn" disabled title="Phase 4-3에서 활성화">납품확인서</button>'
+                        ? `<button class="btn btn-warning btn-sm" id="printDeliveryConfirmBtn" data-deal-id="${escapeHtml(deal.주문번호)}" title="납품확인서 hwpx 다운로드">납품확인서</button>`
                         : ''
                     }
                     <button class="btn btn-secondary btn-sm" id="editDealBtn" data-deal-id="${escapeHtml(deal.주문번호)}">주문 수정</button>
@@ -812,6 +812,15 @@ function showDealModal(dealId) {
         const dealNo = e.currentTarget.dataset.dealId;
         window.open(`statement-print.html?주문번호=${encodeURIComponent(dealNo)}`, '_blank');
     });
+    // 납품확인서 hwpx 출력 (양식 선택 → /api/delivery-confirm → blob 다운로드)
+    const confirmBtn = document.getElementById('printDeliveryConfirmBtn');
+    if (confirmBtn) {
+        confirmBtn.addEventListener('click', (e) => {
+            const dealNo = e.currentTarget.dataset.dealId;
+            const target = joinedDeals.find(d => d.주문번호 === dealNo);
+            if (target) openDeliveryConfirmModal(target);
+        });
+    }
     // 주문 수정 버튼
     document.getElementById('editDealBtn').addEventListener('click', () => {
         const target = joinedDeals.find(d => d.주문번호 === deal.주문번호);
@@ -2610,3 +2619,168 @@ document.addEventListener('DOMContentLoaded', async () => {
     await load();
     await loadPriceTable();
 });
+
+// ===== 납품확인서 hwpx 출력 (Phase 4-3) =====
+// 양식 선택 모달 → 토큰 build → POST /api/delivery-confirm → blob 다운로드
+function openDeliveryConfirmModal(deal) {
+    const defaultType = deal.deliveries?.[0]?.출력양식 || '서명없음';
+    const html = `
+        <div style="padding:0.75rem 0.25rem;">
+            <p style="font-size:0.875rem; color:#374151; margin-bottom:0.75rem;">
+                <strong>${escapeHtml(deal.org?.이름 || deal.거래처ID || '거래처')}</strong> · ${escapeHtml(deal.사업명 || '')}
+            </p>
+            <div style="display:flex; flex-direction:column; gap:0.5rem; margin-bottom:1rem;">
+                <label style="display:flex; align-items:flex-start; gap:0.5rem; padding:0.5rem; border:1px solid #e5e7eb; border-radius:0.375rem; cursor:pointer;">
+                    <input type="radio" name="confirmFormType" value="서명없음" ${defaultType === '서명없음' ? 'checked' : ''} style="margin-top:0.125rem;">
+                    <span><strong>서명없음</strong><br><span style="font-size:0.75rem; color:#6b7280;">감독공무원 1줄 (지자체 일반)</span></span>
+                </label>
+                <label style="display:flex; align-items:flex-start; gap:0.5rem; padding:0.5rem; border:1px solid #e5e7eb; border-radius:0.375rem; cursor:pointer;">
+                    <input type="radio" name="confirmFormType" value="현장서명" ${defaultType === '현장서명' ? 'checked' : ''} style="margin-top:0.125rem;">
+                    <span><strong>현장서명</strong><br><span style="font-size:0.75rem; color:#6b7280;">시공사·현장대리인·책임감리원·소속검사관 4줄 (시공 포함)</span></span>
+                </label>
+            </div>
+            <button type="button" id="confirmDownloadBtn" class="btn btn-primary" style="width:100%; padding:0.625rem;">hwpx 다운로드</button>
+            <p id="confirmStatus" style="font-size:0.75rem; color:#6b7280; margin-top:0.5rem; min-height:1rem;"></p>
+        </div>
+    `;
+    CommonUtils.showModal(`납품확인서 출력 — ${deal.주문번호}`, html, { width: '480px' });
+    document.getElementById('confirmDownloadBtn').addEventListener('click', async () => {
+        const 양식타입 = document.querySelector('input[name="confirmFormType"]:checked')?.value || '서명없음';
+        const tokens = buildConfirmTokens(deal);
+        const btn = document.getElementById('confirmDownloadBtn');
+        const status = document.getElementById('confirmStatus');
+        btn.disabled = true;
+        btn.textContent = '생성 중…';
+        status.textContent = '서버에서 양식을 채우는 중입니다.';
+        try {
+            const res = await fetch('/api/delivery-confirm', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 양식타입, tokens, fileBase: deal.주문번호 })
+            });
+            if (!res.ok) {
+                const errText = await res.text();
+                throw new Error(`HTTP ${res.status}: ${errText.slice(0, 200)}`);
+            }
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `납품확인서_${deal.주문번호}.hwpx`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            status.textContent = '✓ 다운로드 완료';
+            setTimeout(() => CommonUtils.closeModal(), 500);
+        } catch (err) {
+            console.error('[납품확인서]', err);
+            status.textContent = `✗ ${err.message}`;
+            btn.disabled = false;
+            btn.textContent = 'hwpx 다운로드';
+        }
+    });
+}
+
+function buildConfirmTokens(deal) {
+    const lines = deal.lines || [];
+    const deliveries = deal.deliveries || [];
+
+    // 가장 늦은 배송일자 (확인일자 + 사진대지 납품일자)
+    const dates = deliveries.map(d => d.배송일자).filter(Boolean).sort();
+    const maxDate = dates[dates.length - 1] || '';
+
+    // 납품주소: 첫 매칭 배차 라인의 주소
+    const 납품주소 = deliveries.flatMap(d => d.lines || []).map(l => l.주소).filter(Boolean)[0] || '';
+
+    // 품목별 문서제목 (보행매트 / 식생매트 / 논슬립 / 야자매트 등)
+    const 품목 = (lines[0]?.품목 || '보행매트').trim();
+    const 자간 = s => [...s].join(' ');
+
+    const tokens = {
+        '{{문서제목_공문}}': 품목,
+        '{{문서제목_본문}}': `${자간(품목)} 납 품 확 인 서`,
+        '{{납품요구번호}}': deal.납품요구번호 || '',
+        '{{수요기관}}': deal.org?.이름 || '',
+        '{{사업명}}': deal.사업명 || '',
+        '{{납품기한}}': deal.납품기한 || '',
+        '{{담당공무원}}': deal.reqHandler?.이름 || '',
+        '{{확인일자_한글}}': formatKoreanDate(maxDate),
+        '{{납품일자_점}}': formatDotDate(maxDate),
+        '{{납품주소}}': 납품주소,
+    };
+
+    // 라인별 토큰 — 공문/검수현황/납품내역 표
+    lines.forEach((line, i) => {
+        // 이 품명에 배차된 수량 합 (전체 배차 라인에서)
+        const 배차수량합 = deliveries.flatMap(d => d.lines || [])
+            .filter(l => (l.품명 || '').trim() === (line.품명 || '').trim())
+            .reduce((s, l) => s + (Number(l.수량) || 0), 0);
+        // 이 품명의 가장 늦은 납품일자
+        const 라인배송일자 = deliveries
+            .filter(d => (d.lines || []).some(l => (l.품명 || '').trim() === (line.품명 || '').trim()))
+            .map(d => d.배송일자).filter(Boolean).sort().pop() || maxDate;
+
+        const 단가 = Number(line.단가) || 0;
+        const 주문수량 = Number(line.수량) || 0;
+        const 금액 = 단가 * 주문수량;
+
+        // 공문 표 (S0): 규격/납품일자/단가/수량/금액
+        tokens[`{{공문.${i}.규격}}`] = line.품명 || '';
+        tokens[`{{공문.${i}.납품일자}}`] = formatShortDate(라인배송일자);
+        tokens[`{{공문.${i}.단가}}`] = 단가.toLocaleString();
+        tokens[`{{공문.${i}.수량}}`] = String(배차수량합 || 주문수량);
+        tokens[`{{공문.${i}.금액}}`] = 금액.toLocaleString();
+
+        // 검수현황 표 (S1.t0): 8컬럼
+        tokens[`{{검수.${i}.규격}}`] = line.품명 || '';
+        tokens[`{{검수.${i}.배점량}}`] = String(주문수량);
+        tokens[`{{검수.${i}.기검수량}}`] = '';
+        tokens[`{{검수.${i}.금회검수량}}`] = String(배차수량합 || 주문수량);
+        tokens[`{{검수.${i}.잔량}}`] = '';
+        tokens[`{{검수.${i}.단가}}`] = 단가.toLocaleString();
+        tokens[`{{검수.${i}.금액}}`] = 금액.toLocaleString();
+        tokens[`{{검수.${i}.비고}}`] = '';
+
+        // 납품내역 표 (S1.t1): 규격/일자/수량
+        tokens[`{{납품.${i}.규격}}`] = line.품명 || '';
+        tokens[`{{납품.${i}.일자}}`] = formatShortDate(라인배송일자);
+        tokens[`{{납품.${i}.수량}}`] = String(배차수량합 || 주문수량);
+    });
+
+    // 합계 (양식 행 수가 부족하면 토큰이 양식에 없을 수 있음 — 그 경우 무시됨)
+    const 총수량 = lines.reduce((s, l) => s + (Number(l.수량) || 0), 0);
+    const 총금액 = lines.reduce((s, l) => s + ((Number(l.수량) || 0) * (Number(l.단가) || 0)), 0);
+    tokens['{{공문.합계.수량}}'] = String(총수량);
+    tokens['{{공문.합계.금액}}'] = 총금액.toLocaleString();
+    tokens['{{검수.합계.배점량}}'] = String(총수량);
+    tokens['{{검수.합계.기검수량}}'] = '';
+    tokens['{{검수.합계.금회검수량}}'] = String(총수량);
+    tokens['{{검수.합계.잔량}}'] = '';
+    tokens['{{검수.합계.금액}}'] = 총금액.toLocaleString();
+    tokens['{{납품.합계.수량}}'] = String(총수량);
+
+    return tokens;
+}
+
+function formatKoreanDate(iso) {
+    // "2026-06-12" → "2026년   6월  12일"
+    if (!iso) return '';
+    const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!m) return iso;
+    return `${m[1]}년   ${Number(m[2])}월  ${Number(m[3])}일`;
+}
+function formatDotDate(iso) {
+    // "2026-06-12" → "2026. 6. 12."
+    if (!iso) return '';
+    const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!m) return iso;
+    return `${m[1]}. ${Number(m[2])}. ${Number(m[3])}.`;
+}
+function formatShortDate(iso) {
+    // "2026-06-12" → "26. 6. 12."
+    if (!iso) return '';
+    const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!m) return iso;
+    return `${m[1].slice(2)}. ${Number(m[2])}. ${Number(m[3])}.`;
+}
