@@ -1,5 +1,5 @@
 // 주문 관리 — 데이터 로드 + 칸반 렌더링 + 새 거래 입력 폼 (Phase 3-3(B))
-console.log('%c[order-management.js v=20260612j 로드됨 — Phase 8-3+8-4 견적→주문 만들기 + 양방향 동기화]', 'color:#10b981; font-weight:bold');
+console.log('%c[order-management.js v=20260612k 로드됨 — Phase 8-2 관련견적 검색 모달]', 'color:#10b981; font-weight:bold');
 
 const ORDER_DB_BASE = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRum7_WBDKTJSA8B1ATxqpd3BtvjXnPLNQXuMpQsx0q4HVmwm_-JRQLCjy-FrYryIBPuxYkhV7F1nWq/pub';
 const ORDER_SHEET_ID = '13-TkPYeGAaXjPrVxdy_vTf83tvKxqolkK7rfgE4e-1o';
@@ -1813,6 +1813,7 @@ function bindFormEvents() {
     document.querySelectorAll('input[name="vat"]').forEach(r => r.addEventListener('change', onVatChange));
     document.getElementById('addLineBtn').addEventListener('click', () => { addLineRow(); renumberLines(); });
     document.getElementById('openPriceTableBtnOrder').addEventListener('click', () => openPriceTablePicker('order'));
+    document.getElementById('searchQuoteBtn').addEventListener('click', openQuoteSearchModal);
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && isFormOpen()) closeNewDealPanel();
     });
@@ -2625,6 +2626,79 @@ async function onQuoteSubmit(e) {
         saveBtn.disabled = false;
         saveBtn.textContent = orig;
     }
+}
+
+// Phase 8-2: 주문 폼의 [검색] 버튼 — 수요담당자 전화번호로 견적 매칭
+function normalizePhone(p) {
+    return String(p || '').replace(/[^0-9]/g, '');  // 숫자만
+}
+
+function openQuoteSearchModal() {
+    const userPhone = document.getElementById('formDemandPhone').value.trim();
+    const userPhoneNorm = normalizePhone(userPhone);
+    if (!userPhoneNorm) {
+        alert('수요담당자 전화를 먼저 입력하세요.\n견적 검색은 전화번호로 매칭됩니다.');
+        return;
+    }
+    // 연락처 시트에서 전화 매칭 → 연락처ID 집합
+    const matchingContactIds = new Set();
+    (state?.contacts || []).forEach(c => {
+        if (normalizePhone(c.전화) === userPhoneNorm) matchingContactIds.add(c.연락처ID);
+    });
+    // 견적 시트에서 연락처ID 매칭 (옛 견적의 빈 연락처ID는 자동 제외)
+    const matchingQuotes = (joinedQuotes || [])
+        .filter(q => q.연락처ID && matchingContactIds.has(q.연락처ID))
+        .sort((a, b) => String(b.견적일자 || '').localeCompare(String(a.견적일자 || '')));
+
+    if (matchingQuotes.length === 0) {
+        CommonUtils.showModal('관련 견적 검색', `
+            <p style="font-size:0.875rem; color:#6b7280; padding:1rem 0; line-height:1.6;">
+                전화 <strong>${escapeHtml(userPhone)}</strong>로 매칭된 견적이 없습니다.<br>
+                옛 견적은 연락처가 비어있어 검색이 안 될 수 있습니다.<br><br>
+                견적번호를 직접 입력하시거나 견적 시트에서 연락처를 보강한 뒤 새로고침해 주세요.
+            </p>
+        `, { width: '500px' });
+        return;
+    }
+
+    const rows = matchingQuotes.map(q => `
+        <tr data-quote-no="${escapeHtml(q.견적번호)}" style="cursor:pointer; white-space:nowrap;">
+            <td style="padding:0.5rem; border-bottom:1px solid #f3f4f6;">${escapeHtml(q.견적일자 || '-')}</td>
+            <td style="padding:0.5rem; border-bottom:1px solid #f3f4f6; font-family:monospace; font-weight:600;">${escapeHtml(q.견적번호)}</td>
+            <td style="padding:0.5rem; border-bottom:1px solid #f3f4f6;">${escapeHtml(q.org?.이름 || '-')}</td>
+            <td style="padding:0.5rem; border-bottom:1px solid #f3f4f6; max-width:280px; overflow:hidden; text-overflow:ellipsis;" title="${escapeHtml(q.사업명 || '')}">${escapeHtml(q.사업명 || '-')}</td>
+            <td style="padding:0.5rem; border-bottom:1px solid #f3f4f6; text-align:right; color:#059669; font-weight:600;">${CommonUtils.formatCurrency(q.total)}</td>
+            <td style="padding:0.5rem; border-bottom:1px solid #f3f4f6;">${q.관련주문번호 ? `<span style="font-size:0.7rem; color:#6b7280;">주문 ${escapeHtml(q.관련주문번호)}</span>` : '<span style="font-size:0.7rem; color:#16a34a; font-weight:600;">대기</span>'}</td>
+        </tr>
+    `).join('');
+
+    const html = `
+        <p style="font-size:0.8125rem; color:#6b7280; margin-bottom:0.5rem;">
+            전화 <strong>${escapeHtml(userPhone)}</strong> 매칭 견적 <strong>${matchingQuotes.length}건</strong> — 행 클릭 시 견적번호가 폼에 입력됩니다.
+        </p>
+        <div style="max-height:55vh; overflow-y:auto; border:1px solid #e5e7eb; border-radius:0.375rem;">
+            <table style="width:100%; border-collapse:collapse; font-size:0.8125rem; table-layout:fixed;">
+                <thead style="background:#f3f4f6; position:sticky; top:0; z-index:1;">
+                    <tr>
+                        <th style="padding:0.5rem; text-align:left; font-size:0.75rem; width:90px;">견적일자</th>
+                        <th style="padding:0.5rem; text-align:left; font-size:0.75rem; width:110px;">견적번호</th>
+                        <th style="padding:0.5rem; text-align:left; font-size:0.75rem; width:160px;">거래처</th>
+                        <th style="padding:0.5rem; text-align:left; font-size:0.75rem;">사업명</th>
+                        <th style="padding:0.5rem; text-align:right; font-size:0.75rem; width:110px;">금액</th>
+                        <th style="padding:0.5rem; text-align:left; font-size:0.75rem; width:100px;">상태</th>
+                    </tr>
+                </thead>
+                <tbody id="qsBody">${rows}</tbody>
+            </table>
+        </div>
+    `;
+    CommonUtils.showModal('관련 견적 검색', html, { width: '900px' });
+    document.querySelectorAll('#qsBody tr').forEach(tr => {
+        tr.addEventListener('click', () => {
+            document.getElementById('formQuoteRef').value = tr.dataset.quoteNo;
+            CommonUtils.closeModal();
+        });
+    });
 }
 
 // Phase 8-3: 견적 → 주문 폼 prefill (사급 주된 흐름)

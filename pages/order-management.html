@@ -134,7 +134,7 @@
         }
     </style>
     <script src="../assets/js/common.js?v=20260604g"></script>
-    <script src="../assets/js/order-management.js?v=20260612j" defer></script>
+    <script src="../assets/js/order-management.js?v=20260612k" defer></script>
 </head>
 <body class="bg-gray-50 text-gray-800">
     <nav class="bg-white shadow-sm border-b">
@@ -503,7 +503,10 @@
                         </div>
                         <div>
                             <label>관련 견적</label>
-                            <input id="formQuoteRef" placeholder="견적번호 (있으면)">
+                            <span style="display:flex; gap:0.25rem;">
+                                <input id="formQuoteRef" placeholder="견적번호 (있으면)" style="flex:1;">
+                                <button type="button" id="searchQuoteBtn" class="btn btn-sm" style="background:#fff; color:#1e40af; border:1px solid #1e40af; white-space:nowrap;" title="수요담당자 전화번호로 견적 검색">검색</button>
+                            </span>
                         </div>
                         <div>
                             <label>세금계산서일자 <span style="color:#9ca3af; font-weight:normal;">(입력 시 매출실현)</span></label>
