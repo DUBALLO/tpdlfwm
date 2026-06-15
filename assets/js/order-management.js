@@ -1,5 +1,5 @@
 // 주문 관리 — 데이터 로드 + 칸반 렌더링 + 새 거래 입력 폼 (Phase 3-3(B))
-console.log('%c[order-management.js v=20260612b 로드됨 — 납품확인서 hwpx + 품목별 제목]', 'color:#10b981; font-weight:bold');
+console.log('%c[order-management.js v=20260612c 로드됨 — 배차 초과 수량 허용]', 'color:#10b981; font-weight:bold');
 
 const ORDER_DB_BASE = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRum7_WBDKTJSA8B1ATxqpd3BtvjXnPLNQXuMpQsx0q4HVmwm_-JRQLCjy-FrYryIBPuxYkhV7F1nWq/pub';
 const ORDER_DB_TABS = {
@@ -1864,11 +1864,8 @@ function addDispatchBlock(prepopulate = null, meta = null) {
     const remaining = currentRemainingMap(currentDeliveryDeal);
     const hasItems = prepopulate && prepopulate.items && prepopulate.items.length;
     if (!hasItems) {
-        const anyLeft = Object.values(remaining).some(v => v > 0.001);
-        if (!anyLeft) {
-            alert('이 주문은 잔여 수량이 없어 더 배차할 수 없습니다.');
-            return;
-        }
+        // 잔여 0이어도 초과 배차 허용 (실 운영에서 주문량보다 조금씩 더 보내는 케이스).
+        // 음수 잔여는 refreshRemainingDisplays에서 빨강 표시.
         // 새 배차: 직전 배차의 주소·주소링크를 디폴트로 복사 (prepopulate가 비어있을 때만)
         if (!prepopulate || (prepopulate.주소 === undefined && prepopulate.주소링크 === undefined)) {
             const lastBlock = document.querySelector('#dispatchList .dispatch-block:last-child');
@@ -2027,6 +2024,7 @@ function refreshRemainingDisplays() {
             const cell = tr.querySelector('.remaining-cell');
             cell.textContent = `남은 잔여 ${CommonUtils.formatNumber(left)}`;
             cell.classList.toggle('zero', Math.abs(left) < 0.001);
+            cell.classList.toggle('over', left < -0.001);  // 음수 = 초과
             // 초과 빨간색
             const input = tr.querySelector('.qty-input');
             const qty = parseFloat(input.value) || 0;
