@@ -1,5 +1,5 @@
 // 주문 관리 — 데이터 로드 + 칸반 렌더링 + 새 거래 입력 폼 (Phase 3-3(B))
-console.log('%c[order-management.js v=20260612e 로드됨 — UI 개선 6종]', 'color:#10b981; font-weight:bold');
+console.log('%c[order-management.js v=20260612f 로드됨 — 초과 납품도 초록]', 'color:#10b981; font-weight:bold');
 
 const ORDER_DB_BASE = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRum7_WBDKTJSA8B1ATxqpd3BtvjXnPLNQXuMpQsx0q4HVmwm_-JRQLCjy-FrYryIBPuxYkhV7F1nWq/pub';
 const ORDER_SHEET_ID = '13-TkPYeGAaXjPrVxdy_vTf83tvKxqolkK7rfgE4e-1o';
@@ -704,15 +704,12 @@ function showDealModal(dealId) {
         const withRemainder = items.filter(r => r.잔여 > 0.001);
         const withOverflow = items.filter(r => r.잔여 < -0.001);
         if (withRemainder.length === 0) {
-            // 다 배차됨 — 초과 납품 있으면 같이 표시
+            // 다 배차됨 — 초과 납품 있어도 정상 완료로 보고 초록 유지
             const overflowText = withOverflow.length > 0
                 ? `, 초과 납품 ${withOverflow.map(r => `${escapeHtml(r.품명)} ${CommonUtils.formatNumber(Math.abs(r.잔여))}${escapeHtml(r.단위 || '')}`).join(', ')}`
                 : '';
-            const bgColor = withOverflow.length > 0 ? '#fef2f2' : '#f0fdf4';
-            const borderColor = withOverflow.length > 0 ? '#fecaca' : '#bbf7d0';
-            const textColor = withOverflow.length > 0 ? '#991b1b' : '#166534';
             remainingBlock = `
-                <div style="margin-bottom:0.75rem; padding:0.5rem 0.75rem; background:${bgColor}; border-radius:0.375rem; border:1px solid ${borderColor}; font-size:0.8125rem; color:${textColor}; font-weight:600;">
+                <div style="margin-bottom:0.75rem; padding:0.5rem 0.75rem; background:#f0fdf4; border-radius:0.375rem; border:1px solid #bbf7d0; font-size:0.8125rem; color:#166534; font-weight:600;">
                     ✓ 잔여 수량 없음 (모든 품목 배차 완료${overflowText})
                 </div>`;
         } else {
