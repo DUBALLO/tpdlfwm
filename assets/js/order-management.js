@@ -1,5 +1,5 @@
 // 주문 관리 — 데이터 로드 + 칸반 렌더링 + 새 거래 입력 폼 (Phase 3-3(B))
-console.log('%c[order-management.js v=20260612k 로드됨 — Phase 8-2 관련견적 검색 모달]', 'color:#10b981; font-weight:bold');
+console.log('%c[order-management.js v=20260615b 로드됨 — 견적 폼 수요처 담당자 입력]', 'color:#10b981; font-weight:bold');
 
 const ORDER_DB_BASE = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRum7_WBDKTJSA8B1ATxqpd3BtvjXnPLNQXuMpQsx0q4HVmwm_-JRQLCjy-FrYryIBPuxYkhV7F1nWq/pub';
 const ORDER_SHEET_ID = '13-TkPYeGAaXjPrVxdy_vTf83tvKxqolkK7rfgE4e-1o';
@@ -266,6 +266,7 @@ function joinDeals(s) {
 // ===== 견적 조인 =====
 function joinQuotes(s) {
     const orgMap = new Map(s.orgs.map(o => [o.거래처ID, o]));
+    const contactMap = new Map(s.contacts.map(c => [c.연락처ID, c]));
     const linesByQuote = new Map();
     s.quoteLines.forEach(l => {
         if (!linesByQuote.has(l.견적번호)) linesByQuote.set(l.견적번호, []);
@@ -277,6 +278,7 @@ function joinQuotes(s) {
         return {
             ...q,
             org: orgMap.get(q.거래처ID),
+            reqHandler: contactMap.get(q.연락처ID),
             lines,
             total
         };
@@ -741,13 +743,19 @@ function showDealModal(dealId) {
         ? `<span style="display:inline-block; padding:0.125rem 0.625rem; border-radius:9999px; background:${nc.bg}; color:${nc.fg}; font-size:0.75rem; font-weight:600;">${escapeHtml(deal.주문성격)}</span>`
         : '-';
 
+    // 관련견적: joinedQuotes에 실제 존재하면 클릭 시 견적 모달로 교체, 아니면 글자만
+    const linkedQuote = deal.관련견적번호 ? (joinedQuotes || []).find(x => x.견적번호 === deal.관련견적번호) : null;
+    const quoteRefCell = linkedQuote
+        ? `<a href="#" id="dealQuoteLink" data-quote-no="${escapeHtml(deal.관련견적번호)}" style="color:#2563eb; text-decoration:underline; font-weight:600;">${escapeHtml(deal.관련견적번호)}</a>`
+        : escapeHtml(deal.관련견적번호 || '-');
+
     const html = `
         <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:0.5rem; font-size:0.875rem; margin-bottom:1rem">
             <div><span style="color:#6b7280">구분</span> ${natureBadge}</div>
             <div><span style="color:#6b7280">상태</span> ${statusBadge}</div>
             <div><span style="color:#6b7280">거래처</span> ${escapeHtml(deal.org?.이름 || '-')}</div>
             <div><span style="color:#6b7280">사업명</span> ${escapeHtml(deal.사업명 || '-')}</div>
-            <div><span style="color:#6b7280">관련견적</span> ${escapeHtml(deal.관련견적번호 || '-')}</div>
+            <div><span style="color:#6b7280">관련견적</span> ${quoteRefCell}</div>
             <div><span style="color:#6b7280">납품기한</span> ${escapeHtml(deal.납품기한 || '-')} ${deal.납품기한 ? `<span style="color:#991b1b; font-weight:600;">${dueDayLabel(deal.납품기한)}</span>` : ''}</div>
             <div><span style="color:#6b7280">수요처</span> ${escapeHtml(deal.reqHandler?.부서 || '')} ${escapeHtml(deal.reqHandler?.이름 || '-')}${deal.reqHandler?.직함 ? ' ' + escapeHtml(deal.reqHandler.직함) : ''}</div>
             <div><span style="color:#6b7280">연락처</span> ${deal.reqHandler?.전화 ? '<a href="tel:' + escapeHtml(deal.reqHandler.전화) + '" style="color:#2563eb; text-decoration:underline;">' + escapeHtml(deal.reqHandler.전화) + '</a>' : '-'}${deal.reqHandler?.전화2 ? ' · <a href="tel:' + escapeHtml(deal.reqHandler.전화2) + '" style="color:#2563eb; text-decoration:underline;">' + escapeHtml(deal.reqHandler.전화2) + '</a>' : ''}</div>
@@ -811,6 +819,12 @@ function showDealModal(dealId) {
     `;
 
     CommonUtils.showModal(parseOrderDate(deal.주문번호) || deal.주문번호, html, { width: '900px' });
+    // 관련견적 링크 → 견적 모달 (showModal이 단일 #commonModal이라 교체됨)
+    const dealQuoteLink = document.getElementById('dealQuoteLink');
+    if (dealQuoteLink) dealQuoteLink.addEventListener('click', (e) => {
+        e.preventDefault();
+        showQuoteModal(e.currentTarget.dataset.quoteNo);
+    });
     // 거래명세서 출력 (새 탭)
     document.getElementById('printStatementBtn').addEventListener('click', (e) => {
         const dealNo = e.currentTarget.dataset.dealId;
@@ -1303,6 +1317,35 @@ function onExistingContactChange() {
     document.getElementById('formDemandTitle').value = c.직함 || '';
     document.getElementById('formDemandPhone').value = c.전화 || '';
     document.getElementById('formDemandEmail').value = c.이메일 || '';
+}
+
+// 견적 폼: 거래처에 속한 기존 연락처 드롭다운 (주문 폼 fillExistingContactDropdown와 동일 패턴)
+function fillQuoteExistingContactDropdown(orgName) {
+    const sel = document.getElementById('quoteExistingContact');
+    if (!sel) return;
+    const matchedOrg = (state?.orgs || []).find(o => o.이름 === orgName);
+    const orgId = matchedOrg ? matchedOrg.거래처ID : null;
+    const contacts = !orgId ? [] : (state?.contacts || []).filter(c =>
+        c.소속거래처ID === orgId && c.역할 !== '사내담당자'
+    );
+    sel.innerHTML = '<option value="">— 새 담당자 입력 —</option>' +
+        contacts.map(c => {
+            const parts = [c.부서, c.이름, c.직함, c.전화].filter(Boolean).join(' · ');
+            return `<option value="${escapeHtml(c.연락처ID)}">${escapeHtml(parts)}</option>`;
+        }).join('');
+}
+
+function onQuoteExistingContactChange() {
+    const sel = document.getElementById('quoteExistingContact');
+    const conId = sel.value;
+    if (!conId) return;  // 빈값 — 사용자가 새 담당자 직접 입력
+    const c = (state?.contacts || []).find(x => x.연락처ID === conId);
+    if (!c) return;
+    document.getElementById('quoteDemandDept').value = c.부서 || '';
+    document.getElementById('quoteDemandHandler').value = c.이름 || '';
+    document.getElementById('quoteDemandTitle').value = c.직함 || '';
+    document.getElementById('quoteDemandPhone').value = c.전화 || '';
+    document.getElementById('quoteDemandEmail').value = c.이메일 || '';
 }
 
 // ===== 폼 초기 옵션 채우기 =====
@@ -2279,6 +2322,7 @@ function openNewQuotePanel(existing = null) {
     quoteLineCounter = 0;
     fillQuoteHandlerDropdown();
     fillOrgDatalist();
+    fillQuoteExistingContactDropdown('');
 
     const titleEl = document.getElementById('quoteFormTitle');
     const submitBtn = document.querySelector('#newQuoteForm button[type="submit"]');
@@ -2297,6 +2341,15 @@ function openNewQuotePanel(existing = null) {
         document.getElementById('quoteProjectName').value = existing.사업명 || '';
         document.getElementById('quoteTerms').value = existing.인도조건 || '';
         document.getElementById('quoteMemo').value = existing.메모 || '';
+        // 수요담당자 prefill (연락처ID → 연락처 시트에서 raw 값)
+        fillQuoteExistingContactDropdown(existing.org?.이름 || '');
+        const rc = existing.연락처ID ? (state?.contacts || []).find(c => c.연락처ID === existing.연락처ID) : null;
+        document.getElementById('quoteExistingContact').value = existing.연락처ID || '';
+        document.getElementById('quoteDemandDept').value = rc?.부서 || '';
+        document.getElementById('quoteDemandHandler').value = rc?.이름 || '';
+        document.getElementById('quoteDemandTitle').value = rc?.직함 || '';
+        document.getElementById('quoteDemandPhone').value = rc?.전화 || '';
+        document.getElementById('quoteDemandEmail').value = rc?.이메일 || '';
         (existing.lines || []).forEach(l => addQuoteLineRow({
             품목: l.품목, 품명: l.품명, 물품식별번호: l.물품식별번호,
             규격: l.규격, 단위: l.단위, 수량: l.수량, 단가: l.단가
@@ -2593,6 +2646,12 @@ function collectQuoteData() {
         견적유효기간: document.getElementById('quoteValidUntil').value,
         상태: quoteEditMode?.상태 || '대기',
         관련주문번호: quoteEditMode?.관련주문번호 || '',
+        담당자: document.getElementById('quoteDemandHandler').value.trim(),
+        부서: document.getElementById('quoteDemandDept').value.trim(),
+        직함: document.getElementById('quoteDemandTitle').value.trim(),
+        연락처: document.getElementById('quoteDemandPhone').value.trim(),
+        _담당자이메일: document.getElementById('quoteDemandEmail').value.trim(),
+        연락처ID: document.getElementById('quoteExistingContact').value || (quoteEditMode?.연락처ID || ''),
         메모: document.getElementById('quoteMemo').value
     };
     return { quote, lines };
@@ -2764,6 +2823,11 @@ function showQuoteModal(quoteNo) {
     const natureBadge = q.구분
         ? `<span style="display:inline-block; padding:0.125rem 0.625rem; border-radius:9999px; background:${nc.bg}; color:${nc.fg}; font-size:0.75rem; font-weight:600;">${escapeHtml(q.구분)}</span>`
         : '-';
+    // 관련주문: joinedDeals에 실제 존재하면 클릭 시 주문 모달로 교체, 아니면 글자만
+    const linkedDeal = q.관련주문번호 ? (joinedDeals || []).find(d => d.주문번호 === q.관련주문번호) : null;
+    const orderRefCell = linkedDeal
+        ? `<a href="#" id="quoteOrderLink" data-deal-id="${escapeHtml(q.관련주문번호)}" style="color:#2563eb; text-decoration:underline; font-weight:600;">${escapeHtml(q.관련주문번호)}</a>`
+        : escapeHtml(q.관련주문번호 || '-');
     const html = `
         <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:0.5rem; font-size:0.875rem; margin-bottom:1rem">
             <div><span style="color:#6b7280">견적번호</span> <span style="font-family:monospace; font-weight:600;">${escapeHtml(q.견적번호)}</span></div>
@@ -2776,7 +2840,10 @@ function showQuoteModal(quoteNo) {
             <div><span style="color:#6b7280">인도조건</span> ${escapeHtml(q.인도조건 || '-')}</div>
             <div><span style="color:#6b7280">부가세</span> ${vatLabel}</div>
             <div><span style="color:#6b7280">상태</span> <span class="badge badge-primary">${escapeHtml(q.상태 || '대기')}</span></div>
-            <div><span style="color:#6b7280">관련주문</span> ${escapeHtml(q.관련주문번호 || '-')}</div>
+            <div><span style="color:#6b7280">관련주문</span> ${orderRefCell}</div>
+            <div><span style="color:#6b7280">수요처</span> ${escapeHtml(q.reqHandler?.부서 || '')} ${escapeHtml(q.reqHandler?.이름 || '-')}${q.reqHandler?.직함 ? ' ' + escapeHtml(q.reqHandler.직함) : ''}</div>
+            <div><span style="color:#6b7280">연락처</span> ${q.reqHandler?.전화 ? '<a href="tel:' + escapeHtml(q.reqHandler.전화) + '" style="color:#2563eb; text-decoration:underline;">' + escapeHtml(q.reqHandler.전화) + '</a>' : '-'}</div>
+            <div style="grid-column:span 2"><span style="color:#6b7280">이메일</span> ${q.reqHandler?.이메일 ? '<a href="mailto:' + escapeHtml(q.reqHandler.이메일) + '" style="color:#2563eb; text-decoration:underline;">' + escapeHtml(q.reqHandler.이메일) + '</a>' : '-'}</div>
             ${q.메모 ? `<div style="grid-column:span 2"><span style="color:#6b7280">메모</span> ${escapeHtml(q.메모)}</div>` : ''}
         </div>
         <div style="margin-bottom:1rem">
@@ -2797,6 +2864,12 @@ function showQuoteModal(quoteNo) {
         </div>
     `;
     CommonUtils.showModal(`견적 ${q.견적번호}`, html, { width: '900px' });
+    // 관련주문 링크 → 주문 모달 (showModal이 단일 #commonModal이라 교체됨)
+    const quoteOrderLink = document.getElementById('quoteOrderLink');
+    if (quoteOrderLink) quoteOrderLink.addEventListener('click', (e) => {
+        e.preventDefault();
+        showDealModal(e.currentTarget.dataset.dealId);
+    });
     document.getElementById('editQuoteBtn').addEventListener('click', () => {
         const target = joinedQuotes.find(x => x.견적번호 === quoteNo);
         CommonUtils.closeModal();
@@ -2833,6 +2906,8 @@ function bindQuoteFormEvents() {
     document.getElementById('addQuoteLineBtn').addEventListener('click', () => { addQuoteLineRow(); renumberQuoteLines(); });
     document.getElementById('openPriceTableBtn').addEventListener('click', openPriceTablePicker);
     document.getElementById('quoteNature').addEventListener('change', onQuoteNatureChange);
+    document.getElementById('quoteOrgName').addEventListener('blur', e => fillQuoteExistingContactDropdown(e.target.value.trim()));
+    document.getElementById('quoteExistingContact').addEventListener('change', onQuoteExistingContactChange);
     document.querySelectorAll('input[name="quoteVat"]').forEach(r => r.addEventListener('change', onQuoteVatChange));
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && isQuotePanelOpen()) closeQuotePanel();

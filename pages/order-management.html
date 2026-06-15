@@ -134,7 +134,7 @@
         }
     </style>
     <script src="../assets/js/common.js?v=20260604g"></script>
-    <script src="../assets/js/order-management.js?v=20260612k" defer></script>
+    <script src="../assets/js/order-management.js?v=20260615b" defer></script>
 </head>
 <body class="bg-gray-50 text-gray-800">
     <nav class="bg-white shadow-sm border-b">
@@ -202,6 +202,33 @@
                         <div class="span-4">
                             <label>사업명</label>
                             <input id="quoteProjectName">
+                        </div>
+
+                        <div class="span-4">
+                            <label>기존 담당자에서 선택 <span style="color:#9ca3af; font-weight:normal;">(거래처 입력 후 자동 채움)</span></label>
+                            <select id="quoteExistingContact">
+                                <option value="">— 새 담당자 입력 —</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label>수요부서</label>
+                            <input id="quoteDemandDept" placeholder="녹지산림과">
+                        </div>
+                        <div>
+                            <label>담당자</label>
+                            <input id="quoteDemandHandler" placeholder="장소영">
+                        </div>
+                        <div>
+                            <label>직함</label>
+                            <input id="quoteDemandTitle" placeholder="주무관">
+                        </div>
+                        <div>
+                            <label>연락처</label>
+                            <input id="quoteDemandPhone" placeholder="031-...">
+                        </div>
+                        <div class="span-2">
+                            <label>이메일</label>
+                            <input id="quoteDemandEmail" placeholder="@">
                         </div>
 
                         <div class="span-2">
