@@ -134,7 +134,7 @@
         }
     </style>
     <script src="../assets/js/common.js?v=20260604g"></script>
-    <script src="../assets/js/order-management.js?v=20260612c" defer></script>
+    <script src="../assets/js/order-management.js?v=20260612d" defer></script>
 </head>
 <body class="bg-gray-50 text-gray-800">
     <nav class="bg-white shadow-sm border-b">
@@ -454,9 +454,7 @@
                                 <option value="">선택...</option>
                                 <option value="관급">관급</option>
                                 <option value="사급">사급</option>
-                                <option value="비매출-시험시료">비매출-시험시료</option>
-                                <option value="비매출-사내이송">비매출-사내이송</option>
-                                <option value="비매출-기타">비매출-기타</option>
+                                <option value="비매출">비매출 (시범설치·시료·사내이송 등)</option>
                             </select>
                         </div>
                         <div>
@@ -547,7 +545,10 @@
 
                     <h3 class="text-gray-700" style="display: flex; justify-content: space-between; align-items: center;">
                         <span>품목 라인 <span style="color:#9ca3af; font-weight:normal; font-size:0.75rem;">(Tab 키로 칸 이동 / XML 자동 채움 지원)</span></span>
-                        <button type="button" id="addLineBtn" class="btn btn-secondary btn-sm">+ 라인 추가</button>
+                        <span style="display:flex; gap:0.375rem;">
+                            <button type="button" id="openPriceTableBtnOrder" class="btn btn-sm" style="background:#fff; color:#1e40af; border:1px solid #1e40af;">단가표에서 선택</button>
+                            <button type="button" id="addLineBtn" class="btn btn-secondary btn-sm">+ 라인 추가</button>
+                        </span>
                     </h3>
                     <table class="line-table">
                         <thead>
@@ -586,9 +587,7 @@
                 <option value="">전체 구분</option>
                 <option value="관급">관급</option>
                 <option value="사급">사급</option>
-                <option value="비매출-시험시료">비매출-시험시료</option>
-                <option value="비매출-사내이송">비매출-사내이송</option>
-                <option value="비매출-기타">비매출-기타</option>
+                <option value="비매출">비매출</option>
             </select>
             <select id="filterTransport">
                 <option value="">전체 운송형태</option>

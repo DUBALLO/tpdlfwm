@@ -1,5 +1,5 @@
 // 주문 관리 — 데이터 로드 + 칸반 렌더링 + 새 거래 입력 폼 (Phase 3-3(B))
-console.log('%c[order-management.js v=20260612c 로드됨 — 배차 초과 수량 허용]', 'color:#10b981; font-weight:bold');
+console.log('%c[order-management.js v=20260612d 로드됨 — 구분 3종 + 주문 단가표 + 시트링크]', 'color:#10b981; font-weight:bold');
 
 const ORDER_DB_BASE = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRum7_WBDKTJSA8B1ATxqpd3BtvjXnPLNQXuMpQsx0q4HVmwm_-JRQLCjy-FrYryIBPuxYkhV7F1nWq/pub';
 const ORDER_DB_TABS = {
@@ -1075,6 +1075,8 @@ function bindCompletedListControls() {
 const VAT_INCLUDED_DEFAULT = {
     '관급': '포함',
     '사급': '별도',
+    '비매출': '별도',
+    // 옛 시트 데이터 호환 (편집/조회용 — 신규는 '비매출'만 사용)
     '비매출-시험시료': '별도',
     '비매출-사내이송': '별도',
     '비매출-기타': '별도'
@@ -1083,10 +1085,16 @@ const VAT_INCLUDED_DEFAULT = {
 const NATURE_TO_PREFIX = {
     '관급': 'G',
     '사급': 'B',
+    '비매출': 'B',
     '비매출-시험시료': 'B',
     '비매출-사내이송': 'B',
     '비매출-기타': 'B'
 };
+
+// 옛 시트의 '비매출-시험시료/사내이송/기타'를 select 옵션 '비매출'로 정규화
+function normalizeNature(v) {
+    return (v || '').startsWith('비매출-') ? '비매출' : (v || '');
+}
 
 // ===== 거래번호 자동 발번 =====
 function generateDealNumber(nature, dateStr) {
@@ -1121,7 +1129,7 @@ function openNewDealPanel(deal = null) {
         document.querySelector('#newDealForm button[type="submit"]').textContent = '수정 저장';
         document.getElementById('formDealNumber').value = deal.주문번호;
         document.getElementById('formDealNumber').readOnly = true;
-        document.getElementById('formNature').value = deal.주문성격 || '';
+        document.getElementById('formNature').value = normalizeNature(deal.주문성격);
         document.querySelectorAll('input[name="vat"]').forEach(r => r.checked = (r.value === (deal.부가세포함 === 'TRUE' ? '포함' : '별도')));
         document.getElementById('formOrgName').value = deal.org?.이름 || '';
         document.getElementById('formProjectName').value = deal.사업명 || '';
@@ -1265,7 +1273,7 @@ function addLineRow(data = {}) {
     tr.querySelector('.line-product').addEventListener('blur', e => {
         const productName = e.target.value.trim();
         if (!productName || tr.dataset.itemId) return;  // 이미 있으면 건너뛰기
-        const isPublic = document.getElementById('formNature').value === '매출-관급';
+        const isPublic = document.getElementById('formNature').value === '관급';
         const list = isPublic ? priceTable.publicPrices : priceTable.privatePrices;
         const found = list.find(r => r.품명 === productName);
         if (found && found.물품식별번호) {
@@ -1708,6 +1716,7 @@ function bindFormEvents() {
     });
     document.querySelectorAll('input[name="vat"]').forEach(r => r.addEventListener('change', onVatChange));
     document.getElementById('addLineBtn').addEventListener('click', () => { addLineRow(); renumberLines(); });
+    document.getElementById('openPriceTableBtnOrder').addEventListener('click', () => openPriceTablePicker('order'));
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && isFormOpen()) closeNewDealPanel();
     });
@@ -2229,11 +2238,18 @@ function fillOrgDatalist() {
     dl.innerHTML = names.map(n => `<option value="${escapeHtml(n)}">`).join('');
 }
 
-// 단가표 팝업 — 관급/사급 탭 + 검색 + 체크 → 견적 라인으로 일괄 추가
-function openPriceTablePicker() {
-    const nature = document.getElementById('quoteNature').value || '관급';
+// 단가표 시트 ID (구글시트 직접 열기 링크용)
+const PRICE_SHEET_ID = '1fsORbedAOv7ZUWvzcP4Cn8uSJ1uyifBwdrqmYr2ygl4';
+
+// 단가표 팝업 — 관급/사급 탭 + 검색 + 체크 → 라인 일괄 추가
+// mode: 'quote' (견적 라인) | 'order' (주문 라인)
+function openPriceTablePicker(mode = 'quote') {
+    const natureSrcId = mode === 'order' ? 'formNature' : 'quoteNature';
+    const nature = document.getElementById(natureSrcId)?.value || '관급';
     const isPub = nature === '관급';
     const list = isPub ? priceTable.publicPrices : priceTable.privatePrices;
+    const sheetGid = isPub ? PRICE_DB_TABS.publicPrices : PRICE_DB_TABS.privatePrices;
+    const sheetUrl = `https://docs.google.com/spreadsheets/d/${PRICE_SHEET_ID}/edit#gid=${sheetGid}`;
     if (!list || list.length === 0) {
         alert('단가표가 아직 로드되지 않았습니다. 새로고침 후 다시 시도하세요.');
         return;
@@ -2260,6 +2276,7 @@ function openPriceTablePicker() {
         <div style="margin-bottom:0.5rem; display:flex; gap:0.5rem; align-items:center;">
             <span style="font-size:0.875rem; font-weight:600; color:#1e40af;">${nature} 단가표 (${list.length}건)</span>
             <input id="ptSearch" placeholder="품명·규격 검색" style="flex:1; padding:0.3rem 0.5rem; border:1px solid #d1d5db; border-radius:0.25rem; font-size:0.8125rem;">
+            <a href="${sheetUrl}" target="_blank" rel="noopener" class="btn btn-sm" style="background:#fff; color:#0f766e; border:1px solid #0f766e; text-decoration:none; padding:0.3rem 0.5rem; font-size:0.75rem; white-space:nowrap;" title="${nature} 단가표 구글시트 새 탭으로 열기">📊 구글시트 열기</a>
         </div>
         <div style="max-height:50vh; overflow-y:auto; border:1px solid #e5e7eb; border-radius:0.375rem;">
             <table style="width:100%; border-collapse:collapse; font-size:0.875rem;">
@@ -2321,7 +2338,9 @@ function openPriceTablePicker() {
                 if (!isNaN(idx) && currentList[idx]) selected.push(currentList[idx]);
             });
             if (selected.length === 0) { alert('선택된 품목이 없습니다'); return; }
-            selected.forEach(r => addQuoteLineRow({
+            const addFn = mode === 'order' ? addLineRow : addQuoteLineRow;
+            const renumberFn = mode === 'order' ? renumberLines : renumberQuoteLines;
+            selected.forEach(r => addFn({
                 품목: r.품목 || '',
                 품명: r.품명 || '',
                 물품식별번호: r.물품식별번호 || '',
@@ -2330,7 +2349,7 @@ function openPriceTablePicker() {
                 수량: '',
                 단가: String(r.단가 || r.견적단가 || '').replace(/,/g, '')
             }));
-            renumberQuoteLines();
+            renumberFn();
             CommonUtils.closeModal();
         };
     };
