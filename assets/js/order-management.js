@@ -1,5 +1,5 @@
 // 주문 관리 — 데이터 로드 + 칸반 렌더링 + 새 거래 입력 폼 (Phase 3-3(B))
-console.log('%c[order-management.js v=20260612h 로드됨 — 시트 버튼 아이콘 제거]', 'color:#10b981; font-weight:bold');
+console.log('%c[order-management.js v=20260612i 로드됨 — Phase 8-0 견적번호 형식·컬럼명 정정]', 'color:#10b981; font-weight:bold');
 
 const ORDER_DB_BASE = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRum7_WBDKTJSA8B1ATxqpd3BtvjXnPLNQXuMpQsx0q4HVmwm_-JRQLCjy-FrYryIBPuxYkhV7F1nWq/pub';
 const ORDER_SHEET_ID = '13-TkPYeGAaXjPrVxdy_vTf83tvKxqolkK7rfgE4e-1o';
@@ -336,7 +336,7 @@ function renderKanban(deals) {
     });
     // 견적: 활성만 + 견적일자 내림차순 정렬
     const activeQuotes = joinedQuotes
-        .filter(q => !q.관련거래번호 && q.상태 !== '주문전환')
+        .filter(q => !q.관련주문번호 && q.상태 !== '주문전환')
         .sort((a, b) => String(b.견적일자 || '').localeCompare(String(a.견적일자 || '')) || String(b.견적번호).localeCompare(String(a.견적번호)));
     const totalQuotePages = Math.max(1, Math.ceil(activeQuotes.length / QUOTE_PAGE_SIZE));
     if (quotePage >= totalQuotePages) quotePage = totalQuotePages - 1;
@@ -747,7 +747,7 @@ function showDealModal(dealId) {
             <div><span style="color:#6b7280">상태</span> ${statusBadge}</div>
             <div><span style="color:#6b7280">거래처</span> ${escapeHtml(deal.org?.이름 || '-')}</div>
             <div><span style="color:#6b7280">사업명</span> ${escapeHtml(deal.사업명 || '-')}</div>
-            <div><span style="color:#6b7280">견적참조</span> ${escapeHtml(deal.견적참조번호 || '-')}</div>
+            <div><span style="color:#6b7280">관련견적</span> ${escapeHtml(deal.관련견적번호 || '-')}</div>
             <div><span style="color:#6b7280">납품기한</span> ${escapeHtml(deal.납품기한 || '-')} ${deal.납품기한 ? `<span style="color:#991b1b; font-weight:600;">${dueDayLabel(deal.납품기한)}</span>` : ''}</div>
             <div><span style="color:#6b7280">수요처</span> ${escapeHtml(deal.reqHandler?.부서 || '')} ${escapeHtml(deal.reqHandler?.이름 || '-')}${deal.reqHandler?.직함 ? ' ' + escapeHtml(deal.reqHandler.직함) : ''}</div>
             <div><span style="color:#6b7280">연락처</span> ${deal.reqHandler?.전화 ? '<a href="tel:' + escapeHtml(deal.reqHandler.전화) + '" style="color:#2563eb; text-decoration:underline;">' + escapeHtml(deal.reqHandler.전화) + '</a>' : '-'}${deal.reqHandler?.전화2 ? ' · <a href="tel:' + escapeHtml(deal.reqHandler.전화2) + '" style="color:#2563eb; text-decoration:underline;">' + escapeHtml(deal.reqHandler.전화2) + '</a>' : ''}</div>
@@ -1218,7 +1218,7 @@ function openNewDealPanel(deal = null) {
         document.getElementById('formSupplier').value = deal.공급자 || '두발로';
         document.getElementById('formHandler').value = deal.담당자ID || '';
         document.getElementById('formProcureNo').value = deal.납품요구번호 || '';
-        document.getElementById('formQuoteRef').value = deal.견적참조번호 || '';
+        document.getElementById('formQuoteRef').value = deal.관련견적번호 || '';
         document.getElementById('formInvoiceDate').value = deal.세금계산서일자 || '';
         document.getElementById('formDueDate').value = deal.납품기한 || '';
         document.getElementById('formPaymentType').value = deal.대금수령 || '';
@@ -1701,7 +1701,7 @@ function collectFormData() {
         공급자: document.getElementById('formSupplier').value,
         담당자ID: document.getElementById('formHandler').value,
         부가세포함: vat === '포함' ? 'TRUE' : 'FALSE',
-        견적참조번호: document.getElementById('formQuoteRef').value,
+        관련견적번호: document.getElementById('formQuoteRef').value,
         납품요구번호: document.getElementById('formProcureNo').value,
         세금계산서일자: invoiceDate,
         납품기한: document.getElementById('formDueDate').value,
@@ -2577,7 +2577,7 @@ function collectQuoteData() {
         부가세포함: vatRadio === '포함' ? 'TRUE' : 'FALSE',
         견적유효기간: document.getElementById('quoteValidUntil').value,
         상태: quoteEditMode?.상태 || '대기',
-        관련거래번호: quoteEditMode?.관련거래번호 || '',
+        관련주문번호: quoteEditMode?.관련주문번호 || '',
         메모: document.getElementById('quoteMemo').value
     };
     return { quote, lines };
@@ -2649,7 +2649,7 @@ function showQuoteModal(quoteNo) {
             <div><span style="color:#6b7280">인도조건</span> ${escapeHtml(q.인도조건 || '-')}</div>
             <div><span style="color:#6b7280">부가세</span> ${vatLabel}</div>
             <div><span style="color:#6b7280">상태</span> <span class="badge badge-primary">${escapeHtml(q.상태 || '대기')}</span></div>
-            <div><span style="color:#6b7280">관련주문</span> ${escapeHtml(q.관련거래번호 || '-')}</div>
+            <div><span style="color:#6b7280">관련주문</span> ${escapeHtml(q.관련주문번호 || '-')}</div>
             ${q.메모 ? `<div style="grid-column:span 2"><span style="color:#6b7280">메모</span> ${escapeHtml(q.메모)}</div>` : ''}
         </div>
         <div style="margin-bottom:1rem">
