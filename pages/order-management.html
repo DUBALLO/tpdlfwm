@@ -134,7 +134,7 @@
         }
     </style>
     <script src="../assets/js/common.js?v=20260604g"></script>
-    <script src="../assets/js/order-management.js?v=20260612d" defer></script>
+    <script src="../assets/js/order-management.js?v=20260612e" defer></script>
 </head>
 <body class="bg-gray-50 text-gray-800">
     <nav class="bg-white shadow-sm border-b">
@@ -263,7 +263,7 @@
         <!-- 비매출 배송 입력 패널 — 주문 없이 단독 배송 (송장 출력용) -->
         <div id="newNonSalesPanel">
             <div class="form-section">
-                <h2 style="color:#7c3aed;">비매출 배송 등록 <span style="font-size:0.75rem; color:#9ca3af; font-weight:normal;">(주문 없이 송장 출력용)</span></h2>
+                <h2 style="color:#7c3aed;">비매출 배송 등록 <span style="font-size:0.75rem; color:#9ca3af; font-weight:normal;">(주문 없는 송장 출력용)</span></h2>
 
                 <form id="newNonSalesForm" autocomplete="off">
                     <div class="form-grid">
@@ -597,6 +597,7 @@
                 <option value="방문픽업">방문픽업</option>
             </select>
             <input type="search" id="filterSearch" placeholder="거래번호 / 거래처 / 사업명 검색">
+            <a id="orderSheetLink" href="https://docs.google.com/spreadsheets/d/13-TkPYeGAaXjPrVxdy_vTf83tvKxqolkK7rfgE4e-1o/edit" target="_blank" rel="noopener" class="btn btn-secondary" style="background:#fff; color:#0f766e; border:1px solid #0f766e; text-decoration:none;" title="주문관리 구글시트 새 탭으로 열기">📊 시트 열기</a>
             <button id="reloadBtn" class="btn btn-secondary">새로고침</button>
         </div>
 
@@ -613,7 +614,10 @@
         <div id="completedList" class="completed-list hidden">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
                 <h3 style="margin:0;">납품 완료 <span id="completedCount" style="color:#9ca3af; font-weight:normal;"></span></h3>
-                <select id="completedYearFilter" style="padding:0.35rem 0.5rem; border:1px solid #d1d5db; border-radius:0.25rem; font-size:0.8125rem;"></select>
+                <span style="display:flex; gap:0.5rem; align-items:center;">
+                    <button type="button" id="completedPrintBtn" class="btn btn-sm" style="background:#fff; color:#ea580c; border:1px solid #ea580c;">🖨️ 출력</button>
+                    <select id="completedYearFilter" style="padding:0.35rem 0.5rem; border:1px solid #d1d5db; border-radius:0.25rem; font-size:0.8125rem;"></select>
+                </span>
             </div>
             <table>
                 <thead>

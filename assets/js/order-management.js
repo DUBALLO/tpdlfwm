@@ -1,7 +1,9 @@
 // 주문 관리 — 데이터 로드 + 칸반 렌더링 + 새 거래 입력 폼 (Phase 3-3(B))
-console.log('%c[order-management.js v=20260612d 로드됨 — 구분 3종 + 주문 단가표 + 시트링크]', 'color:#10b981; font-weight:bold');
+console.log('%c[order-management.js v=20260612e 로드됨 — UI 개선 6종]', 'color:#10b981; font-weight:bold');
 
 const ORDER_DB_BASE = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRum7_WBDKTJSA8B1ATxqpd3BtvjXnPLNQXuMpQsx0q4HVmwm_-JRQLCjy-FrYryIBPuxYkhV7F1nWq/pub';
+const ORDER_SHEET_ID = '13-TkPYeGAaXjPrVxdy_vTf83tvKxqolkK7rfgE4e-1o';
+const ORDER_SHEET_URL = `https://docs.google.com/spreadsheets/d/${ORDER_SHEET_ID}/edit`;
 const ORDER_DB_TABS = {
     deals:         0,
     dealLines:     745694215,
@@ -472,14 +474,12 @@ function openDeliveryPicker() {
     const candidates = joinedDeals.filter(d => !d.세금계산서일자 && d.totalRemaining > 0.001);
     const rows = candidates.map(d => {
         const orderDate = parseOrderDate(d.주문번호);
-        const remainItems = Object.values(d.remainingByItem).filter(r => r.잔여 > 0.001);
-        const remText = remainItems.map(r => `${escapeHtml(r.품명)} ${CommonUtils.formatNumber(r.잔여)}${escapeHtml(r.단위 || '')}`).join(', ');
         return `
-            <tr data-deal-id="${escapeHtml(d.주문번호)}" style="cursor:pointer;">
+            <tr data-deal-id="${escapeHtml(d.주문번호)}" style="cursor:pointer; white-space:nowrap;">
                 <td style="padding:0.5rem; border-bottom:1px solid #f3f4f6;">${escapeHtml(orderDate)}</td>
                 <td style="padding:0.5rem; border-bottom:1px solid #f3f4f6;">${escapeHtml(d.org?.이름 || d.거래처ID || '-')}</td>
-                <td style="padding:0.5rem; border-bottom:1px solid #f3f4f6;">${escapeHtml(d.사업명 || '-')}</td>
-                <td style="padding:0.5rem; border-bottom:1px solid #f3f4f6; color:#dc2626; font-size:0.75rem;">${remText}</td>
+                <td style="padding:0.5rem; border-bottom:1px solid #f3f4f6; max-width:380px; overflow:hidden; text-overflow:ellipsis;" title="${escapeHtml(d.사업명 || '')}">${escapeHtml(d.사업명 || '-')}</td>
+                <td style="padding:0.5rem; border-bottom:1px solid #f3f4f6; text-align:right; color:#059669; font-weight:600;">${CommonUtils.formatCurrency(d.total)}</td>
             </tr>
         `;
     }).join('');
@@ -487,13 +487,13 @@ function openDeliveryPicker() {
         ? '<p style="font-size:0.8125rem; color:#9ca3af; padding:1rem 0;">잔여 수량이 있는 주문이 없습니다.</p>'
         : `
             <p style="font-size:0.8125rem; color:#6b7280; margin-bottom:0.5rem;">잔여 수량이 있는 주문 ${candidates.length}건 — 선택하면 그 주문의 배송 폼이 열립니다.</p>
-            <table style="width:100%; border-collapse:collapse; font-size:0.875rem;">
+            <table style="width:100%; border-collapse:collapse; font-size:0.875rem; table-layout:fixed;">
                 <thead>
                     <tr style="background:#f3f4f6;">
-                        <th style="padding:0.5rem; text-align:left; font-size:0.75rem;">주문일자</th>
-                        <th style="padding:0.5rem; text-align:left; font-size:0.75rem;">거래처</th>
+                        <th style="padding:0.5rem; text-align:left; font-size:0.75rem; width:90px;">주문일자</th>
+                        <th style="padding:0.5rem; text-align:left; font-size:0.75rem; width:140px;">거래처</th>
                         <th style="padding:0.5rem; text-align:left; font-size:0.75rem;">사업명</th>
-                        <th style="padding:0.5rem; text-align:left; font-size:0.75rem;">잔여</th>
+                        <th style="padding:0.5rem; text-align:right; font-size:0.75rem; width:110px;">금액</th>
                     </tr>
                 </thead>
                 <tbody id="pickerBody">${rows}</tbody>
@@ -503,7 +503,7 @@ function openDeliveryPicker() {
         <div style="background:#faf5ff; border:1px solid #c4b5fd; border-radius:0.375rem; padding:0.75rem; margin-bottom:0.75rem; display:flex; justify-content:space-between; align-items:center;">
             <div>
                 <div style="font-weight:600; color:#6b21a8; font-size:0.875rem;">비매출 배송</div>
-                <div style="font-size:0.75rem; color:#7c3aed;">주문 없이 송장 출력용 (시험시료·사내이송·기타)</div>
+                <div style="font-size:0.75rem; color:#7c3aed;">주문 없는 송장 출력용 (시험시료·사내이송·기타)</div>
             </div>
             <button class="btn btn-primary btn-sm" id="openNonSalesBtn" style="background:#7c3aed;">비매출 배송 등록</button>
         </div>
@@ -702,11 +702,18 @@ function showDealModal(dealId) {
     if (deal.deliveries.length > 0) {
         const items = Object.values(deal.remainingByItem || {});
         const withRemainder = items.filter(r => r.잔여 > 0.001);
+        const withOverflow = items.filter(r => r.잔여 < -0.001);
         if (withRemainder.length === 0) {
-            // 다 배차됨
+            // 다 배차됨 — 초과 납품 있으면 같이 표시
+            const overflowText = withOverflow.length > 0
+                ? `, 초과 납품 ${withOverflow.map(r => `${escapeHtml(r.품명)} ${CommonUtils.formatNumber(Math.abs(r.잔여))}${escapeHtml(r.단위 || '')}`).join(', ')}`
+                : '';
+            const bgColor = withOverflow.length > 0 ? '#fef2f2' : '#f0fdf4';
+            const borderColor = withOverflow.length > 0 ? '#fecaca' : '#bbf7d0';
+            const textColor = withOverflow.length > 0 ? '#991b1b' : '#166534';
             remainingBlock = `
-                <div style="margin-bottom:0.75rem; padding:0.5rem 0.75rem; background:#f0fdf4; border-radius:0.375rem; border:1px solid #bbf7d0; font-size:0.8125rem; color:#166534; font-weight:600;">
-                    ✓ 잔여 수량 없음 (모든 품목 배차 완료)
+                <div style="margin-bottom:0.75rem; padding:0.5rem 0.75rem; background:${bgColor}; border-radius:0.375rem; border:1px solid ${borderColor}; font-size:0.8125rem; color:${textColor}; font-weight:600;">
+                    ✓ 잔여 수량 없음 (모든 품목 배차 완료${overflowText})
                 </div>`;
         } else {
             remainingBlock = `
@@ -1011,7 +1018,7 @@ function renderCompletedList(deals) {
     countEl.textContent = `(${filtered.length}건 / 전체 ${allDone.length}건)`;
     tbody.innerHTML = slice.map(d => `
         <tr data-deal-id="${escapeHtml(d.주문번호)}">
-            <td>${escapeHtml(parseOrderDate(d.주문번호))}</td>
+            <td style="white-space:nowrap;">${escapeHtml(parseOrderDate(d.주문번호))} ${natureBadge(d.주문번호, d.주문성격)}</td>
             <td>${escapeHtml(d.org?.이름 || d.거래처ID || '-')}</td>
             <td>${escapeHtml(d.사업명 || '-')}</td>
             <td style="text-align:right; color:#059669; font-weight:600;">${CommonUtils.formatCurrency(d.total)}</td>
@@ -1066,6 +1073,8 @@ function bindCompletedListControls() {
         completedPage = 0;
         render();
     });
+    const printBtn = document.getElementById('completedPrintBtn');
+    if (printBtn) printBtn.addEventListener('click', printCompletedList);
 }
 
 // ==========================================
@@ -1094,6 +1103,68 @@ const NATURE_TO_PREFIX = {
 // 옛 시트의 '비매출-시험시료/사내이송/기타'를 select 옵션 '비매출'로 정규화
 function normalizeNature(v) {
     return (v || '').startsWith('비매출-') ? '비매출' : (v || '');
+}
+
+// 주문번호 prefix(G/B/C) + 주문성격으로 관급/사급/비매출 타원 텍스트 생성
+function natureBadge(주문번호, 주문성격) {
+    const prefix = String(주문번호 || '').charAt(0);
+    const nat = normalizeNature(주문성격);
+    const isPublic = prefix === 'G' || nat === '관급' || nat === '매출-관급';
+    const isPrivate = prefix === 'B' || nat === '사급' || nat === '매출-사급';
+    if (isPublic) return '<span style="background:#dbeafe; color:#1e40af; padding:0.1rem 0.45rem; border-radius:9999px; font-size:0.7rem; font-weight:600; margin-left:0.3rem;">관급</span>';
+    if (isPrivate) return '<span style="background:#efebe9; color:#5d4037; padding:0.1rem 0.45rem; border-radius:9999px; font-size:0.7rem; font-weight:600; margin-left:0.3rem;">사급</span>';
+    return '<span style="background:#f3f4f6; color:#6b7280; padding:0.1rem 0.45rem; border-radius:9999px; font-size:0.7rem; font-weight:600; margin-left:0.3rem;">비매출</span>';
+}
+
+// 납품 완료 리스트 인쇄 — 새 탭에 출력 (현재 필터·정렬 유지)
+function printCompletedList() {
+    const yearLabel = completedYear ? `${completedYear}년` : '전체';
+    const allDone = (joinedDeals || []).filter(d => d.세금계산서일자);
+    const filtered = !completedYear ? allDone : allDone.filter(d => {
+        const y = (parseOrderDate(d.주문번호) || d.세금계산서일자 || '').slice(0, 4);
+        return y === completedYear;
+    });
+    const sorted = [...filtered].sort((a, b) => {
+        const ka = parseOrderDate(a.주문번호) || '', kb = parseOrderDate(b.주문번호) || '';
+        return kb.localeCompare(ka);
+    });
+    const totalAmount = sorted.reduce((s, d) => s + (d.total || 0), 0);
+    const rows = sorted.map(d => `
+        <tr>
+            <td>${escapeHtml(parseOrderDate(d.주문번호))} ${natureBadge(d.주문번호, d.주문성격)}</td>
+            <td>${escapeHtml(d.org?.이름 || d.거래처ID || '-')}</td>
+            <td>${escapeHtml(d.사업명 || '-')}</td>
+            <td style="text-align:right; color:#059669; font-weight:600;">${CommonUtils.formatCurrency(d.total)}</td>
+            <td>${escapeHtml(d.세금계산서일자 || '')}</td>
+        </tr>
+    `).join('');
+    const html = `<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8">
+<title>납품 완료 — ${yearLabel}</title>
+<style>
+  @page { size: A4 landscape; margin: 12mm; }
+  body { font-family: 'Noto Sans KR', sans-serif; padding: 12px; color: #1f1f1f; }
+  h1 { font-size: 16pt; margin: 0 0 4px; }
+  .meta { font-size: 10pt; color: #555; margin-bottom: 10px; }
+  table { width: 100%; border-collapse: collapse; font-size: 10pt; }
+  th, td { padding: 6px 8px; border-bottom: 1px solid #ddd; text-align: left; vertical-align: top; }
+  th { background: #f3f4f6; font-size: 9pt; font-weight: 600; }
+  td:nth-child(4), th:nth-child(4) { text-align: right; }
+  .sum { font-weight: 700; background: #f9fafb; }
+</style></head><body>
+<h1>납품 완료 — ${yearLabel}</h1>
+<div class="meta">${sorted.length}건 · 총액 ${CommonUtils.formatCurrency(totalAmount)} · 발행 ${new Date().toLocaleString('ko-KR')}</div>
+<table>
+  <thead><tr><th>주문일자</th><th>거래처</th><th>사업명</th><th>금액</th><th>세금계산서일자</th></tr></thead>
+  <tbody>${rows}</tbody>
+  <tfoot><tr class="sum"><td colspan="3" style="text-align:right;">합계</td><td style="text-align:right;">${CommonUtils.formatCurrency(totalAmount)}</td><td></td></tr></tfoot>
+</table>
+<script>window.onload = () => setTimeout(() => window.print(), 400);<\/script>
+</body></html>`;
+    const w = window.open('', '_blank', 'width=1100,height=800');
+    if (!w) { alert('팝업이 차단되었습니다. 팝업 허용 후 다시 시도해 주세요.'); return; }
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
 }
 
 // ===== 거래번호 자동 발번 =====
