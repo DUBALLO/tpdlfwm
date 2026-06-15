@@ -1,5 +1,5 @@
 // 주문 관리 — 데이터 로드 + 칸반 렌더링 + 새 거래 입력 폼 (Phase 3-3(B))
-console.log('%c[order-management.js v=20260612i 로드됨 — Phase 8-0 견적번호 형식·컬럼명 정정]', 'color:#10b981; font-weight:bold');
+console.log('%c[order-management.js v=20260612j 로드됨 — Phase 8-3+8-4 견적→주문 만들기 + 양방향 동기화]', 'color:#10b981; font-weight:bold');
 
 const ORDER_DB_BASE = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRum7_WBDKTJSA8B1ATxqpd3BtvjXnPLNQXuMpQsx0q4HVmwm_-JRQLCjy-FrYryIBPuxYkhV7F1nWq/pub';
 const ORDER_SHEET_ID = '13-TkPYeGAaXjPrVxdy_vTf83tvKxqolkK7rfgE4e-1o';
@@ -1768,7 +1768,21 @@ async function onSubmit(e) {
         const result = await callGAS(action, { deal: payload.deal, lines: payload.lines });
         if (!result.ok) throw new Error(result.error || '알 수 없는 오류');
         console.log('[GAS 응답]', result);
-        alert(`✓ ${isEdit ? '수정' : '저장'} 완료\n\n주문번호: ${result.dealNumber || payload.deal.주문번호}\n품목: ${result.linesAdded || payload.lines.length}건`);
+
+        // Phase 8-4: 관련견적번호가 있으면 견적 시트의 관련주문번호·상태 자동 동기화
+        const finalDealNo = result.dealNumber || payload.deal.주문번호;
+        const quoteRef = (payload.deal.관련견적번호 || '').trim();
+        if (quoteRef) {
+            try {
+                const sync = await callGAS('updateQuoteRelation', { quoteNo: quoteRef, dealNo: finalDealNo });
+                if (sync?.ok) console.log('[견적 동기화]', sync);
+                else console.warn('[견적 동기화 실패]', sync?.error);
+            } catch (syncErr) {
+                console.warn('[견적 동기화 예외]', syncErr);  // 동기화 실패해도 주문 저장은 성공
+            }
+        }
+
+        alert(`✓ ${isEdit ? '수정' : '저장'} 완료\n\n주문번호: ${finalDealNo}\n품목: ${result.linesAdded || payload.lines.length}건${quoteRef ? `\n관련견적: ${quoteRef}` : ''}`);
         closeNewDealPanel();
         await load(); // 칸반 새로고침
     } catch (err) {
@@ -2613,6 +2627,45 @@ async function onQuoteSubmit(e) {
     }
 }
 
+// Phase 8-3: 견적 → 주문 폼 prefill (사급 주된 흐름)
+function openNewDealFromQuote(q) {
+    openNewDealPanel();  // 신규 모드 + 폼 초기화
+    // 주문성격: 견적의 구분 그대로 (관급/사급/비매출)
+    const nature = normalizeNature(q.구분 || '사급');
+    document.getElementById('formNature').value = nature;
+    // 거래처
+    document.getElementById('formOrgName').value = q.org?.이름 || '';
+    document.getElementById('formProjectName').value = q.사업명 || '';
+    document.getElementById('formSupplier').value = q.공급자 || '두발로';
+    document.getElementById('formHandler').value = q.담당자ID || '';
+    // 부가세
+    const vat = q.부가세포함 === 'TRUE' ? '포함' : '별도';
+    document.querySelectorAll('input[name="vat"]').forEach(r => { r.checked = (r.value === vat); });
+    // 관련견적
+    document.getElementById('formQuoteRef').value = q.견적번호;
+    // 라인
+    document.getElementById('lineTableBody').innerHTML = '';
+    lineCounter = 0;
+    (q.lines || []).forEach(l => addLineRow({
+        품목: l.품목, 품명: l.품명, 물품식별번호: l.물품식별번호,
+        규격: l.규격, 단위: l.단위, 수량: l.수량, 단가: l.단가
+    }));
+    recalcTotals();
+    // 주문번호 발번
+    const today = new Date().toISOString().slice(0, 10);
+    document.getElementById('formOrderDate').value = today;
+    document.getElementById('formDealNumber').value = generateDealNumber(nature, today);
+    // 수요담당자 — 견적의 연락처ID가 있으면 거래처 채운 후 자동 채움
+    if (q.org?.이름) fillExistingContactDropdown(q.org.이름);
+    if (q.연락처ID) {
+        const sel = document.getElementById('formExistingContact');
+        if (sel) {
+            sel.value = q.연락처ID;
+            onExistingContactChange();
+        }
+    }
+}
+
 function showQuoteModal(quoteNo) {
     const q = joinedQuotes.find(x => x.견적번호 === quoteNo);
     if (!q) return;
@@ -2663,6 +2716,7 @@ function showQuoteModal(quoteNo) {
         <div style="display:flex; justify-content:space-between; align-items:center; padding-top:0.75rem; border-top:1px solid #e5e7eb;">
             <button class="btn btn-secondary btn-sm" id="deleteQuoteBtn" style="background:#fee2e2; color:#991b1b;">삭제</button>
             <span style="display:flex; gap:0.375rem;">
+                ${q.관련주문번호 ? `<span style="font-size:0.75rem; color:#6b7280; align-self:center;">이미 주문 ${escapeHtml(q.관련주문번호)} 생성됨</span>` : `<button class="btn btn-sm" id="makeOrderFromQuoteBtn" style="background:#fff; color:#7c3aed; border:1px solid #7c3aed;">주문 만들기</button>`}
                 <button class="btn btn-secondary btn-sm" id="editQuoteBtn">견적 수정</button>
                 <button class="btn btn-primary btn-sm" id="printQuoteBtn" data-quote-no="${escapeHtml(q.견적번호)}">견적서 출력</button>
             </span>
@@ -2674,6 +2728,13 @@ function showQuoteModal(quoteNo) {
         CommonUtils.closeModal();
         openNewQuotePanel(target);
     });
+    const makeOrderBtn = document.getElementById('makeOrderFromQuoteBtn');
+    if (makeOrderBtn) {
+        makeOrderBtn.addEventListener('click', () => {
+            CommonUtils.closeModal();
+            openNewDealFromQuote(q);
+        });
+    }
     document.getElementById('printQuoteBtn').addEventListener('click', (e) => {
         const no = e.target.dataset.quoteNo;
         window.open(`/pages/quote-print.html?견적번호=${encodeURIComponent(no)}`, '_blank');
