@@ -1,5 +1,5 @@
 // 주문 관리 — 데이터 로드 + 칸반 렌더링 + 새 거래 입력 폼 (Phase 3-3(B))
-console.log('%c[order-management.js v=20260612f 로드됨 — 초과 납품도 초록]', 'color:#10b981; font-weight:bold');
+console.log('%c[order-management.js v=20260612g 로드됨 — 납품완료 구분 컬럼 분리 + 인쇄 폭 조정]', 'color:#10b981; font-weight:bold');
 
 const ORDER_DB_BASE = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRum7_WBDKTJSA8B1ATxqpd3BtvjXnPLNQXuMpQsx0q4HVmwm_-JRQLCjy-FrYryIBPuxYkhV7F1nWq/pub';
 const ORDER_SHEET_ID = '13-TkPYeGAaXjPrVxdy_vTf83tvKxqolkK7rfgE4e-1o';
@@ -993,6 +993,7 @@ function renderCompletedList(deals) {
     const getKey = (d, col) => {
         switch (col) {
             case '주문일자': return parseOrderDate(d.주문번호) || '';
+            case '구분': return natureLabel(d.주문번호, d.주문성격);
             case '거래처': return d.org?.이름 || d.거래처ID || '';
             case '사업명': return d.사업명 || '';
             case '금액': return d.total || 0;
@@ -1015,7 +1016,8 @@ function renderCompletedList(deals) {
     countEl.textContent = `(${filtered.length}건 / 전체 ${allDone.length}건)`;
     tbody.innerHTML = slice.map(d => `
         <tr data-deal-id="${escapeHtml(d.주문번호)}">
-            <td style="white-space:nowrap;">${escapeHtml(parseOrderDate(d.주문번호))} ${natureBadge(d.주문번호, d.주문성격)}</td>
+            <td style="white-space:nowrap;">${escapeHtml(parseOrderDate(d.주문번호))}</td>
+            <td style="text-align:center;">${natureBadge(d.주문번호, d.주문성격)}</td>
             <td>${escapeHtml(d.org?.이름 || d.거래처ID || '-')}</td>
             <td>${escapeHtml(d.사업명 || '-')}</td>
             <td style="text-align:right; color:#059669; font-weight:600;">${CommonUtils.formatCurrency(d.total)}</td>
@@ -1102,15 +1104,21 @@ function normalizeNature(v) {
     return (v || '').startsWith('비매출-') ? '비매출' : (v || '');
 }
 
-// 주문번호 prefix(G/B/C) + 주문성격으로 관급/사급/비매출 타원 텍스트 생성
-function natureBadge(주문번호, 주문성격) {
+// 주문번호 prefix(G/B/C) + 주문성격으로 관급/사급/비매출 라벨
+function natureLabel(주문번호, 주문성격) {
     const prefix = String(주문번호 || '').charAt(0);
     const nat = normalizeNature(주문성격);
-    const isPublic = prefix === 'G' || nat === '관급' || nat === '매출-관급';
-    const isPrivate = prefix === 'B' || nat === '사급' || nat === '매출-사급';
-    if (isPublic) return '<span style="background:#dbeafe; color:#1e40af; padding:0.1rem 0.45rem; border-radius:9999px; font-size:0.7rem; font-weight:600; margin-left:0.3rem;">관급</span>';
-    if (isPrivate) return '<span style="background:#efebe9; color:#5d4037; padding:0.1rem 0.45rem; border-radius:9999px; font-size:0.7rem; font-weight:600; margin-left:0.3rem;">사급</span>';
-    return '<span style="background:#f3f4f6; color:#6b7280; padding:0.1rem 0.45rem; border-radius:9999px; font-size:0.7rem; font-weight:600; margin-left:0.3rem;">비매출</span>';
+    if (prefix === 'G' || nat === '관급' || nat === '매출-관급') return '관급';
+    if (prefix === 'B' || nat === '사급' || nat === '매출-사급') return '사급';
+    return '비매출';
+}
+
+// 관급/사급/비매출 타원 텍스트 생성
+function natureBadge(주문번호, 주문성격) {
+    const label = natureLabel(주문번호, 주문성격);
+    if (label === '관급') return '<span style="background:#dbeafe; color:#1e40af; padding:0.1rem 0.55rem; border-radius:9999px; font-size:0.7rem; font-weight:600; white-space:nowrap;">관급</span>';
+    if (label === '사급') return '<span style="background:#efebe9; color:#5d4037; padding:0.1rem 0.55rem; border-radius:9999px; font-size:0.7rem; font-weight:600; white-space:nowrap;">사급</span>';
+    return '<span style="background:#f3f4f6; color:#6b7280; padding:0.1rem 0.55rem; border-radius:9999px; font-size:0.7rem; font-weight:600; white-space:nowrap;">비매출</span>';
 }
 
 // 납품 완료 리스트 인쇄 — 새 탭에 출력 (현재 필터·정렬 유지)
@@ -1128,32 +1136,38 @@ function printCompletedList() {
     const totalAmount = sorted.reduce((s, d) => s + (d.total || 0), 0);
     const rows = sorted.map(d => `
         <tr>
-            <td>${escapeHtml(parseOrderDate(d.주문번호))} ${natureBadge(d.주문번호, d.주문성격)}</td>
+            <td class="c-date">${escapeHtml(parseOrderDate(d.주문번호))}</td>
+            <td class="c-nature">${natureBadge(d.주문번호, d.주문성격)}</td>
             <td>${escapeHtml(d.org?.이름 || d.거래처ID || '-')}</td>
-            <td>${escapeHtml(d.사업명 || '-')}</td>
-            <td style="text-align:right; color:#059669; font-weight:600;">${CommonUtils.formatCurrency(d.total)}</td>
-            <td>${escapeHtml(d.세금계산서일자 || '')}</td>
+            <td class="c-name">${escapeHtml(d.사업명 || '-')}</td>
+            <td class="c-amt">${CommonUtils.formatCurrency(d.total)}</td>
+            <td class="c-date">${escapeHtml(d.세금계산서일자 || '')}</td>
         </tr>
     `).join('');
     const html = `<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8">
 <title>납품 완료 — ${yearLabel}</title>
 <style>
-  @page { size: A4 landscape; margin: 12mm; }
-  body { font-family: 'Noto Sans KR', sans-serif; padding: 12px; color: #1f1f1f; }
-  h1 { font-size: 16pt; margin: 0 0 4px; }
-  .meta { font-size: 10pt; color: #555; margin-bottom: 10px; }
-  table { width: 100%; border-collapse: collapse; font-size: 10pt; }
-  th, td { padding: 6px 8px; border-bottom: 1px solid #ddd; text-align: left; vertical-align: top; }
-  th { background: #f3f4f6; font-size: 9pt; font-weight: 600; }
-  td:nth-child(4), th:nth-child(4) { text-align: right; }
+  @page { size: A4 landscape; margin: 10mm; }
+  body { font-family: 'Noto Sans KR', sans-serif; padding: 8px; color: #1f1f1f; }
+  h1 { font-size: 14pt; margin: 0 0 4px; }
+  .meta { font-size: 9pt; color: #555; margin-bottom: 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 9pt; table-layout: fixed; }
+  th, td { padding: 5px 6px; border-bottom: 1px solid #ddd; text-align: left; vertical-align: middle; word-break: keep-all; overflow-wrap: break-word; }
+  th { background: #f3f4f6; font-size: 8.5pt; font-weight: 600; }
+  th:nth-child(1), td.c-date { width: 9%; white-space: nowrap; }
+  th:nth-child(2), td.c-nature { width: 6%; text-align: center; }
+  th:nth-child(3) { width: 18%; }
+  th:nth-child(4) { width: auto; }
+  th:nth-child(5), td.c-amt { width: 12%; text-align: right; color: #059669; font-weight: 600; white-space: nowrap; }
+  th:nth-child(6) { width: 10%; }
   .sum { font-weight: 700; background: #f9fafb; }
 </style></head><body>
 <h1>납품 완료 — ${yearLabel}</h1>
 <div class="meta">${sorted.length}건 · 총액 ${CommonUtils.formatCurrency(totalAmount)} · 발행 ${new Date().toLocaleString('ko-KR')}</div>
 <table>
-  <thead><tr><th>주문일자</th><th>거래처</th><th>사업명</th><th>금액</th><th>세금계산서일자</th></tr></thead>
+  <thead><tr><th>주문일자</th><th>구분</th><th>거래처</th><th>사업명</th><th>금액</th><th>세금계산서일자</th></tr></thead>
   <tbody>${rows}</tbody>
-  <tfoot><tr class="sum"><td colspan="3" style="text-align:right;">합계</td><td style="text-align:right;">${CommonUtils.formatCurrency(totalAmount)}</td><td></td></tr></tfoot>
+  <tfoot><tr class="sum"><td colspan="4" style="text-align:right;">합계</td><td class="c-amt">${CommonUtils.formatCurrency(totalAmount)}</td><td></td></tr></tfoot>
 </table>
 <script>window.onload = () => setTimeout(() => window.print(), 400);<\/script>
 </body></html>`;
