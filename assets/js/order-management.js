@@ -1,5 +1,5 @@
 // 주문 관리 — 데이터 로드 + 칸반 렌더링 + 새 거래 입력 폼 (Phase 3-3(B))
-console.log('%c[order-management.js v=20260612g 로드됨 — 납품완료 구분 컬럼 분리 + 인쇄 폭 조정]', 'color:#10b981; font-weight:bold');
+console.log('%c[order-management.js v=20260612h 로드됨 — 시트 버튼 아이콘 제거]', 'color:#10b981; font-weight:bold');
 
 const ORDER_DB_BASE = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRum7_WBDKTJSA8B1ATxqpd3BtvjXnPLNQXuMpQsx0q4HVmwm_-JRQLCjy-FrYryIBPuxYkhV7F1nWq/pub';
 const ORDER_SHEET_ID = '13-TkPYeGAaXjPrVxdy_vTf83tvKxqolkK7rfgE4e-1o';
@@ -2358,7 +2358,7 @@ function openPriceTablePicker(mode = 'quote') {
         <div style="margin-bottom:0.5rem; display:flex; gap:0.5rem; align-items:center;">
             <span style="font-size:0.875rem; font-weight:600; color:#1e40af;">${nature} 단가표 (${list.length}건)</span>
             <input id="ptSearch" placeholder="품명·규격 검색" style="flex:1; padding:0.3rem 0.5rem; border:1px solid #d1d5db; border-radius:0.25rem; font-size:0.8125rem;">
-            <a href="${sheetUrl}" target="_blank" rel="noopener" class="btn btn-sm" style="background:#fff; color:#0f766e; border:1px solid #0f766e; text-decoration:none; padding:0.3rem 0.5rem; font-size:0.75rem; white-space:nowrap;" title="${nature} 단가표 구글시트 새 탭으로 열기">📊 구글시트 열기</a>
+            <a href="${sheetUrl}" target="_blank" rel="noopener" class="btn btn-sm" style="background:#fff; color:#0f766e; border:1px solid #0f766e; text-decoration:none; padding:0.3rem 0.5rem; font-size:0.75rem; white-space:nowrap;" title="${nature} 단가표 구글시트 새 탭으로 열기">구글시트 열기</a>
         </div>
         <div style="max-height:50vh; overflow-y:auto; border:1px solid #e5e7eb; border-radius:0.375rem;">
             <table style="width:100%; border-collapse:collapse; font-size:0.875rem;">
