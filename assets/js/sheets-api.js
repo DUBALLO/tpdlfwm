@@ -77,8 +77,12 @@ class SheetsAPI {
             console.warn('[API 객체 없음] window.publicDataAPI 또는 fetch2026Data 없음');
         }
 
-        const finalCombined = combinedHistoricalData.concat(apiData2026);
-        console.log(`[최종 합계] 전체 데이터: ${finalCombined.length}건`);
+        // 소스 경계(시트 ≤2025 ↔ API 2026) 이중계상 제거:
+        // 2025년 주문이 2026년에 차수 올라 마무리된 건은 같은 계약(납품요구번호+사업자번호+물품순번)이
+        // 양 소스에 차수만 다르게 남는다. 소스별 dedup만으론 안 잡혀 → 통합 dedup으로 최대 차수(최신) 1건만 채택.
+        const combined = combinedHistoricalData.concat(apiData2026);
+        const finalCombined = this.pickFinalRevisionPerContract(combined, '[통합]');
+        console.log(`[최종 합계] 전체 데이터: ${finalCombined.length}건 (통합 dedup 적용)`);
 
         return finalCombined;
     }
