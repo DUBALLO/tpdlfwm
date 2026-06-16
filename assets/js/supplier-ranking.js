@@ -1,5 +1,5 @@
 // supplier-ranking.js
-console.log('%c[supplier-ranking.js v=20260615f — 업체 소재지/정보(MAS) 연결]', 'color:#0ea5e9; font-weight:bold');
+console.log('%c[supplier-ranking.js v=20260615g — 업체 소재지(시/도) 필터 추가]', 'color:#0ea5e9; font-weight:bold');
 
 // 전역 변수
 let allData = [];
@@ -44,10 +44,19 @@ async function loadSupplierInfo() {
     } catch (e) { console.warn('[업체정보] 로드 실패(소재지 생략):', e.message); }
 }
 
+// 업체 소재지 시/도 드롭다운을 업체정보의 실제 시도 값으로 채움
+function populateRegionFilter() {
+    const sel = document.getElementById('regionFilter');
+    if (!sel) return;
+    const sidos = [...new Set([...supplierInfoMap.values()].map(r => r['시도']).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ko'));
+    sel.innerHTML = '<option value="all">전체</option>' + sidos.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
     try {
         const [data] = await Promise.all([loadAndParseData(), loadSupplierInfo()]);
         allData = data;
+        populateRegionFilter();
         document.getElementById('analyzeBtn').addEventListener('click', analyzeData);
         await analyzeData();
     } catch (error) {
@@ -87,11 +96,14 @@ function analyzeData() {
 
     const year = document.getElementById('analysisYear').value;
     const product = document.getElementById('productFilter').value;
+    const region = document.getElementById('regionFilter').value;
 
-    currentFilteredData = allData.filter(item =>
-        (year === 'all' || (item.date && item.date.startsWith(year))) &&
-        (product === 'all' || item.product === product)
-    );
+    currentFilteredData = allData.filter(item => {
+        if (year !== 'all' && !(item.date && item.date.startsWith(year))) return false;
+        if (product !== 'all' && item.product !== product) return false;
+        if (region !== 'all') { const inf = infoOf(item.bizno); if (!inf || inf['시도'] !== region) return false; }
+        return true;
+    });
 
     updateSummaryStats(currentFilteredData);
     renderSupplierTable(currentFilteredData);
