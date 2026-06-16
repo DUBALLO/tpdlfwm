@@ -1,5 +1,5 @@
 // 주문 관리 — 데이터 로드 + 칸반 렌더링 + 새 거래 입력 폼 (Phase 3-3(B))
-console.log('%c[order-management.js v=20260615b 로드됨 — 견적 폼 수요처 담당자 입력]', 'color:#10b981; font-weight:bold');
+console.log('%c[order-management.js v=20260615c 로드됨 — 상단바 개편(통합검색·구분 견적적용·운송형태 삭제·완료 전체연도)]', 'color:#10b981; font-weight:bold');
 
 const ORDER_DB_BASE = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRum7_WBDKTJSA8B1ATxqpd3BtvjXnPLNQXuMpQsx0q4HVmwm_-JRQLCjy-FrYryIBPuxYkhV7F1nWq/pub';
 const ORDER_SHEET_ID = '13-TkPYeGAaXjPrVxdy_vTf83tvKxqolkK7rfgE4e-1o';
@@ -120,7 +120,7 @@ const KANBAN_PAGE_SIZE = 5;
 let completedPage = 0;
 const COMPLETED_PAGE_SIZE = 10;
 let completedSort = { col: '주문일자', dir: 'desc' };
-let completedYear = '2026';
+let completedYear = null;  // null=미설정(첫 렌더에서 최신연도 디폴트), ''=전체, 'YYYY'=특정연도
 
 // ===== CSV 파서 (sheets-api.js 패턴 재사용) =====
 function parseCSV(csvText) {
@@ -285,18 +285,29 @@ function joinQuotes(s) {
     });
 }
 
+// ===== 통합 검색 haystack (주문/견적 공용) — 연락처·품목·배송까지 포함 =====
+function dealHaystack(d) {
+    const parts = [d.주문번호, d.사업명, d.공급자, d.납품요구번호, d.관련견적번호, d.비고, d.주문성격,
+        d.org?.이름, d.org?.사업자번호, d.handler?.이름,
+        d.reqHandler?.이름, d.reqHandler?.부서, d.reqHandler?.직함, d.reqHandler?.전화, d.reqHandler?.전화2, d.reqHandler?.이메일];
+    (d.lines || []).forEach(l => parts.push(l.품명, l.규격));
+    (d.deliveries || []).forEach(dl => parts.push(dl.인수자명, dl.인수자전화, dl.주소));
+    return parts.filter(Boolean).join(' ').toLowerCase();
+}
+function quoteHaystack(q) {
+    const parts = [q.견적번호, q.사업명, q.공급자, q.메모, q.org?.이름,
+        q.reqHandler?.이름, q.reqHandler?.부서, q.reqHandler?.직함, q.reqHandler?.전화, q.reqHandler?.전화2, q.reqHandler?.이메일];
+    (q.lines || []).forEach(l => parts.push(l.품명, l.규격));
+    return parts.filter(Boolean).join(' ').toLowerCase();
+}
+
 // ===== 필터 =====
 function applyFilters(deals) {
     const nature = document.getElementById('filterNature').value;
-    const transport = document.getElementById('filterTransport').value;
     const search = document.getElementById('filterSearch').value.trim().toLowerCase();
     return deals.filter(d => {
         if (nature && d.주문성격 !== nature) return false;
-        if (transport && d.운송형태 !== transport) return false;
-        if (search) {
-            const hay = [d.주문번호, d.사업명, d.org?.이름].filter(Boolean).join(' ').toLowerCase();
-            if (!hay.includes(search)) return false;
-        }
+        if (search && !dealHaystack(d).includes(search)) return false;
         return true;
     });
 }
@@ -337,8 +348,12 @@ function renderKanban(deals) {
         grouped[col].push(d);
     });
     // 견적: 활성만 + 견적일자 내림차순 정렬
+    const _kanbanSearch = (document.getElementById('filterSearch')?.value || '').trim().toLowerCase();
+    const _kanbanNature = document.getElementById('filterNature')?.value || '';
     const activeQuotes = joinedQuotes
         .filter(q => !q.관련주문번호 && q.상태 !== '주문전환')
+        .filter(q => !_kanbanNature || ((q.구분 || '').startsWith('비매출') ? '비매출' : (q.구분 || '')) === _kanbanNature)
+        .filter(q => !_kanbanSearch || quoteHaystack(q).includes(_kanbanSearch))
         .sort((a, b) => String(b.견적일자 || '').localeCompare(String(a.견적일자 || '')) || String(b.견적번호).localeCompare(String(a.견적번호)));
     const totalQuotePages = Math.max(1, Math.ceil(activeQuotes.length / QUOTE_PAGE_SIZE));
     if (quotePage >= totalQuotePages) quotePage = totalQuotePages - 1;
@@ -990,12 +1005,12 @@ function renderCompletedList(deals) {
     });
     const years = Array.from(yearsSet).sort().reverse();
     const yearSel = document.getElementById('completedYearFilter');
-    const prevYear = yearSel.value || completedYear;
+    // null=첫 진입 → 최신 연도 디폴트. ''=사용자가 '전체' 선택(존중). 사라진 연도면 최신으로.
+    if (completedYear === null) completedYear = years[0] || '';
+    else if (completedYear && !years.includes(completedYear)) completedYear = years[0] || '';
     yearSel.innerHTML = '<option value="">전체</option>' +
-        years.map(y => `<option value="${y}" ${y === prevYear ? 'selected' : ''}>${y}년</option>`).join('');
-    if (years.includes(prevYear)) yearSel.value = prevYear;
-    else if (years.length > 0) { yearSel.value = years[0]; completedYear = years[0]; }
-    else { yearSel.value = ''; completedYear = ''; }
+        years.map(y => `<option value="${y}" ${y === completedYear ? 'selected' : ''}>${y}년</option>`).join('');
+    yearSel.value = completedYear;
 
     // 필터 (연도)
     const filtered = !completedYear ? allDone : allDone.filter(d => {
@@ -2915,9 +2930,7 @@ function bindQuoteFormEvents() {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-    ['filterNature', 'filterTransport'].forEach(id => {
-        document.getElementById(id).addEventListener('change', render);
-    });
+    document.getElementById('filterNature').addEventListener('change', render);
     document.getElementById('filterSearch').addEventListener('input', render);
     document.getElementById('reloadBtn').addEventListener('click', load);
     bindFormEvents();

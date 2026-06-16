@@ -134,7 +134,7 @@
         }
     </style>
     <script src="../assets/js/common.js?v=20260604g"></script>
-    <script src="../assets/js/order-management.js?v=20260615b" defer></script>
+    <script src="../assets/js/order-management.js?v=20260615c" defer></script>
 </head>
 <body class="bg-gray-50 text-gray-800">
     <nav class="bg-white shadow-sm border-b">
@@ -619,14 +619,7 @@
                 <option value="사급">사급</option>
                 <option value="비매출">비매출</option>
             </select>
-            <select id="filterTransport">
-                <option value="">전체 운송형태</option>
-                <option value="택배">택배</option>
-                <option value="직배">직배</option>
-                <option value="화물">화물</option>
-                <option value="방문픽업">방문픽업</option>
-            </select>
-            <input type="search" id="filterSearch" placeholder="거래번호 / 거래처 / 사업명 검색">
+            <input type="search" id="filterSearch" placeholder="통합 검색 — 주문·견적·거래처·담당자·전화·품목">
             <a id="orderSheetLink" href="https://docs.google.com/spreadsheets/d/13-TkPYeGAaXjPrVxdy_vTf83tvKxqolkK7rfgE4e-1o/edit" target="_blank" rel="noopener" class="btn btn-secondary" style="background:#fff; color:#0f766e; border:1px solid #0f766e; text-decoration:none;" title="주문관리 구글시트 새 탭으로 열기">시트 열기</a>
             <button id="reloadBtn" class="btn btn-secondary">새로고침</button>
         </div>
