@@ -1,4 +1,5 @@
 // 월별매출 현황 JavaScript (날짜 처리 오류 수정 최종본)
+console.log('%c[monthly-sales.js v=20260615d — 주문관리 deals 소스 전환(Phase 7)]', 'color:#0ea5e9; font-weight:bold');
 
 // 전역 변수
 let salesData = [];
@@ -25,52 +26,75 @@ function parseDate(dateStr) {
     return null;
 }
 
+// ===== 주문관리 [DB] 소스 (Phase 7: 옛 판매실적 시트 → 주문관리 deals 전환) =====
+const ORDER_DB_BASE = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRum7_WBDKTJSA8B1ATxqpd3BtvjXnPLNQXuMpQsx0q4HVmwm_-JRQLCjy-FrYryIBPuxYkhV7F1nWq/pub';
+const ORDER_DB_GIDS = { deals: 0, dealLines: 745694215, orgs: 2099986654 };
+const orderDbUrl = gid => `${ORDER_DB_BASE}?gid=${gid}&single=true&output=csv`;
+const toNum = s => parseInt(String(s || '').replace(/[^\d-]/g, '')) || 0;
+function parseCSVText(text) {
+    const rows = []; let row = [], cell = '', inQ = false;
+    for (let i = 0; i < text.length; i++) {
+        const c = text[i], n = text[i + 1];
+        if (c === '"') { if (inQ && n === '"') { cell += '"'; i++; } else inQ = !inQ; }
+        else if (c === ',' && !inQ) { row.push(cell); cell = ''; }
+        else if ((c === '\n' || c === '\r') && !inQ) { if (c === '\r' && n === '\n') i++; if (cell !== '' || row.length) { row.push(cell); rows.push(row); } row = []; cell = ''; }
+        else cell += c;
+    }
+    if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+    if (rows.length === 0) return [];
+    const headers = rows[0].map(h => h.trim());
+    return rows.slice(1).filter(r => r.some(c => String(c).trim())).map(r => {
+        const o = {}; headers.forEach((h, i) => o[h] = (r[i] || '').trim()); return o;
+    });
+}
+async function fetchOrderDb(gid) {
+    const res = await fetch(orderDbUrl(gid), { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status} (gid ${gid})`);
+    return parseCSVText(await res.text());
+}
+
 // 데이터 로드
 async function loadSalesData() {
     try {
         $('monthlyTableBody').innerHTML = '<tr><td colspan="8" class="text-center py-4">데이터를 불러오는 중...</td></tr>';
-        const rawData = await window.sheetsAPI.loadCSVData('monthlySales');
-        if (rawData.length === 0) throw new Error('파싱된 데이터가 없습니다.');
+        const [deals, dealLines, orgs] = await Promise.all([
+            fetchOrderDb(ORDER_DB_GIDS.deals),
+            fetchOrderDb(ORDER_DB_GIDS.dealLines),
+            fetchOrderDb(ORDER_DB_GIDS.orgs)
+        ]);
+        if (deals.length === 0) throw new Error('주문 데이터가 없습니다.');
 
-        salesData = rawData.flatMap(item => {
-            const results = [];
-            // 안정적인 날짜 처리 로직으로 복원
-            const dateValue = item['날짜'] || item['주문일자'] || item['기준일자'] || '';
-            const recordDate = parseDate(dateValue);
-            if (!recordDate) return [];
+        const orgName = new Map(orgs.map(o => [o['거래처ID'], o['이름']]));
+        const linesByDeal = new Map();
+        dealLines.forEach(l => {
+            const no = l['주문번호']; if (!no) return;
+            if (!linesByDeal.has(no)) linesByDeal.set(no, []);
+            linesByDeal.get(no).push(l);
+        });
 
-            const invoiceDateValue = item['세금계산서'] || '';
-            const invoiceDate = parseDate(invoiceDateValue);
-            const typeValue = item['구분'] || '';
-            const contractValue = item['계약명'] || '계약명 없음';
-            const customerValue = item['거래처'] || '거래처 없음';
-            const amountValue = item['합계'] || '0';
-            const itemValue = item['품목구분'] || '';
-            const specValue = item['규격'] || '';
-            const quantityValue = parseInt(String(item['수량'] || '0').replace(/[^\d]/g, ''));
-            const unitPriceValue = parseInt(String(item['단가'] || '0').replace(/[^\d]/g, ''));
-            const parsedAmount = parseInt(String(amountValue).replace(/[^\d]/g, '')) || 0;
-
-            if(parsedAmount === 0 || contractValue === '계약명 없음' || customerValue === '거래처 없음') return [];
-
-            const baseItem = {
-                contractName: contractValue.trim(), customer: customerValue.trim(),
-                amount: parsedAmount, item: itemValue.trim(), spec: specValue.trim(),
-                quantity: quantityValue, unitPrice: unitPriceValue
-            };
-
-            results.push({ ...baseItem, date: recordDate, type: invoiceDate ? '납품완료' : '주문' });
-            
-            const saleDate = invoiceDate || recordDate;
-            if (invoiceDate) {
-            if (typeValue.includes('관급')) {
-            // 매출일(date)을 invoiceDate로 명확히 지정
-            results.push({ ...baseItem, date: invoiceDate, type: '관급매출' });
-            } else if (typeValue.includes('사급')) {
-            results.push({ ...baseItem, date: invoiceDate, type: '사급매출' });
-            }
-        }
-            return results;
+        salesData = [];
+        deals.forEach(deal => {
+            const nature = deal['주문성격'] || '';
+            if (nature.startsWith('비매출')) return;            // 비매출 제외
+            const recordDate = parseDate(deal['주문일자']);      // 주문일자 컬럼 (Phase 7 신설)
+            if (!recordDate) return;
+            const invoiceDate = parseDate(deal['세금계산서일자']);
+            const contractValue = (deal['사업명'] || '계약명 없음').trim();
+            const customerValue = (orgName.get(deal['거래처ID']) || deal['거래처ID'] || '거래처 없음').trim();
+            (linesByDeal.get(deal['주문번호']) || []).forEach(l => {
+                const parsedAmount = toNum(l['합계']);
+                if (parsedAmount === 0) return;
+                const baseItem = {
+                    contractName: contractValue, customer: customerValue,
+                    amount: parsedAmount, item: (l['품명'] || l['품목'] || '').trim(), spec: (l['규격'] || '').trim(),
+                    quantity: toNum(l['수량']), unitPrice: toNum(l['단가'])
+                };
+                salesData.push({ ...baseItem, date: recordDate, type: invoiceDate ? '납품완료' : '주문' });
+                if (invoiceDate) {
+                    if (nature.includes('관급')) salesData.push({ ...baseItem, date: invoiceDate, type: '관급매출' });
+                    else if (nature.includes('사급')) salesData.push({ ...baseItem, date: invoiceDate, type: '사급매출' });
+                }
+            });
         });
         generateReport();
     } catch (error) {
