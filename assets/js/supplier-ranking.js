@@ -1,4 +1,5 @@
 // supplier-ranking.js
+console.log('%c[supplier-ranking.js v=20260615e — 식별키 사업자번호 전환]', 'color:#0ea5e9; font-weight:bold');
 
 // 전역 변수
 let allData = [];
@@ -7,6 +8,9 @@ let sortStates = {
     main: { key: 'amount', direction: 'desc', type: 'number' },
     detail: { key: 'amount', direction: 'desc', type: 'number' }
 };
+
+// 업체 식별키: 사업자번호(숫자) 우선, 없으면 업체명 — 상호 표기차로 갈리는 것 방지
+const supplierKey = item => item.bizno || item.supplier;
 
 document.addEventListener('DOMContentLoaded', async () => {
     try {
@@ -32,6 +36,7 @@ async function loadAndParseData() {
         return {
             agency: (item['수요기관명'] || '').trim(),
             supplier: (item['업체'] || '').trim(),
+            bizno: String(item['업체사업자등록번호'] || '').replace(/[^\d]/g, ''),  // 사업자번호(숫자만) — 식별키
             region: (item['수요기관지역'] || '').trim().split(' ')[0],
             agencyType: item['소관구분'] || '기타',
             product: (item['세부품명'] || '').trim(),
@@ -60,7 +65,7 @@ function analyzeData() {
 }
 
 function updateSummaryStats(data) {
-    const totalSuppliers = new Set(data.map(item => item.supplier)).size;
+    const totalSuppliers = new Set(data.map(supplierKey)).size;
     const totalContracts = data.length; // 계약 건수는 row 수로 집계
     const totalSales = data.reduce((sum, item) => sum + item.amount, 0);
 
@@ -95,17 +100,16 @@ function renderSupplierTable(data) {
 
     const supplierMap = new Map();
     data.forEach(item => {
-        if (!supplierMap.has(item.supplier)) {
-            supplierMap.set(item.supplier, { amount: 0, contractCount: 0 });
+        const key = supplierKey(item);
+        if (!supplierMap.has(key)) {
+            supplierMap.set(key, { key, bizno: item.bizno, supplier: item.supplier, amount: 0, contractCount: 0 });
         }
-        const info = supplierMap.get(item.supplier);
+        const info = supplierMap.get(key);
         info.amount += item.amount;
         info.contractCount++; // 각 row를 계약 1건으로 집계
     });
 
-    let supplierData = [...supplierMap.entries()].map(([supplier, { amount, contractCount }]) => ({
-        supplier, amount, contractCount
-    }));
+    let supplierData = [...supplierMap.values()];
 
     sortData(supplierData, sortStates.main);
     supplierData.forEach((item, index) => item.rank = index + 1);
@@ -119,13 +123,13 @@ function renderSupplierTable(data) {
         const row = tbody.insertRow();
         row.innerHTML = `
             <td class="px-4 py-3 text-center">${item.rank}</td>
-            <td class="px-4 py-3"><a href="#" data-supplier="${item.supplier}" class="text-blue-600 hover:underline">${item.supplier}</a></td>
+            <td class="px-4 py-3"><a href="#" data-key="${item.key}" class="text-blue-600 hover:underline">${item.supplier}</a></td>
             <td class="px-4 py-3 text-center">${CommonUtils.formatNumber(item.contractCount)}</td>
             <td class="px-4 py-3 text-right font-medium">${CommonUtils.formatCurrency(item.amount)}</td>
         `;
         row.querySelector('a').addEventListener('click', e => {
             e.preventDefault();
-            showSupplierDetail(e.target.dataset.supplier);
+            showSupplierDetail(e.currentTarget.dataset.key);
         });
     });
 
@@ -143,7 +147,8 @@ function renderSupplierTable(data) {
     panel.querySelector('#exportMainBtn').addEventListener('click', () => CommonUtils.exportTableToCSV(panel.querySelector('#supplierTable'), '업체별_판매순위.csv'));
 }
 
-function showSupplierDetail(supplierName) {
+function showSupplierDetail(key) {
+    const supplierName = (currentFilteredData.find(item => supplierKey(item) === key) || {}).supplier || key;
     const detailPanel = document.getElementById('supplierDetailPanel');
     detailPanel.innerHTML = `
         <div class="p-6 printable-area">
@@ -168,7 +173,7 @@ function showSupplierDetail(supplierName) {
             </div>
         </div>`;
 
-    const supplierSpecificData = currentFilteredData.filter(item => item.supplier === supplierName);
+    const supplierSpecificData = currentFilteredData.filter(item => supplierKey(item) === key);
     const agencyTotalMap = new Map();
     currentFilteredData.forEach(item => {
         agencyTotalMap.set(item.agency, (agencyTotalMap.get(item.agency) || 0) + item.amount);
