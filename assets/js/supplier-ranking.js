@@ -1,5 +1,5 @@
 // supplier-ranking.js
-console.log('%c[supplier-ranking.js v=20260615e — 식별키 사업자번호 전환]', 'color:#0ea5e9; font-weight:bold');
+console.log('%c[supplier-ranking.js v=20260615f — 업체 소재지/정보(MAS) 연결]', 'color:#0ea5e9; font-weight:bold');
 
 // 전역 변수
 let allData = [];
@@ -12,9 +12,42 @@ let sortStates = {
 // 업체 식별키: 사업자번호(숫자) 우선, 없으면 업체명 — 상호 표기차로 갈리는 것 방지
 const supplierKey = item => item.bizno || item.supplier;
 
+// 업체정보 시트 (조달청 MAS → GAS 빌드, 사업자번호별 소재지·인증·담당부서)
+const ORDER_DB_BASE = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRum7_WBDKTJSA8B1ATxqpd3BtvjXnPLNQXuMpQsx0q4HVmwm_-JRQLCjy-FrYryIBPuxYkhV7F1nWq/pub';
+const SUPPLIER_INFO_GID = 1770790299;
+let supplierInfoMap = new Map();  // 사업자번호(숫자) → 업체정보 행
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const infoOf = bizno => supplierInfoMap.get(String(bizno || '').replace(/[^\d]/g, ''));
+
+function parseCSVText(text) {
+    const rows = []; let row = [], cell = '', inQ = false;
+    for (let i = 0; i < text.length; i++) {
+        const c = text[i], n = text[i + 1];
+        if (c === '"') { if (inQ && n === '"') { cell += '"'; i++; } else inQ = !inQ; }
+        else if (c === ',' && !inQ) { row.push(cell); cell = ''; }
+        else if ((c === '\n' || c === '\r') && !inQ) { if (c === '\r' && n === '\n') i++; if (cell !== '' || row.length) { row.push(cell); rows.push(row); } row = []; cell = ''; }
+        else cell += c;
+    }
+    if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+    if (!rows.length) return [];
+    const h = rows[0].map(x => x.trim());
+    return rows.slice(1).filter(r => r.some(x => String(x).trim())).map(r => { const o = {}; h.forEach((k, i) => o[k] = (r[i] || '').trim()); return o; });
+}
+
+async function loadSupplierInfo() {
+    try {
+        const res = await fetch(`${ORDER_DB_BASE}?gid=${SUPPLIER_INFO_GID}&single=true&output=csv`, { cache: 'no-store' });
+        if (!res.ok) return;
+        const rows = parseCSVText(await res.text());
+        supplierInfoMap = new Map(rows.map(r => [String(r['사업자번호'] || '').replace(/[^\d]/g, ''), r]).filter(([k]) => k));
+        console.log(`[업체정보] ${supplierInfoMap.size}개 로드`);
+    } catch (e) { console.warn('[업체정보] 로드 실패(소재지 생략):', e.message); }
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
     try {
-        allData = await loadAndParseData();
+        const [data] = await Promise.all([loadAndParseData(), loadSupplierInfo()]);
+        allData = data;
         document.getElementById('analyzeBtn').addEventListener('click', analyzeData);
         await analyzeData();
     } catch (error) {
@@ -90,6 +123,7 @@ function renderSupplierTable(data) {
                     <thead class="bg-gray-50"><tr>
                         <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="rank" data-sort-type="number"><span>순위</span></th>
                         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="supplier" data-sort-type="string"><span>업체명</span></th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="locplcSort" data-sort-type="string"><span>소재지</span></th>
                         <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="contractCount" data-sort-type="number"><span>계약건수</span></th>
                         <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="amount" data-sort-type="number"><span>총 판매액</span></th>
                     </tr></thead>
@@ -110,12 +144,17 @@ function renderSupplierTable(data) {
     });
 
     let supplierData = [...supplierMap.values()];
+    supplierData.forEach(s => {
+        const inf = infoOf(s.bizno);
+        s.locplc = inf ? ((inf['시도'] || '') + (inf['시군'] ? ' ' + inf['시군'] : '')).trim() : '';
+        s.locplcSort = s.locplc || '￿';  // 미등록은 정렬 맨 뒤
+    });
 
     sortData(supplierData, sortStates.main);
     supplierData.forEach((item, index) => item.rank = index + 1);
 
     const tbody = panel.querySelector('#supplierTableBody');
-    tbody.innerHTML = '<tr><td colspan="4" class="text-center py-8 text-gray-500">데이터가 없습니다.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center py-8 text-gray-500">데이터가 없습니다.</td></tr>';
     if (supplierData.length === 0) return;
 
     tbody.innerHTML = '';
@@ -124,6 +163,7 @@ function renderSupplierTable(data) {
         row.innerHTML = `
             <td class="px-4 py-3 text-center">${item.rank}</td>
             <td class="px-4 py-3"><a href="#" data-key="${item.key}" class="text-blue-600 hover:underline">${item.supplier}</a></td>
+            <td class="px-4 py-3 text-gray-600">${item.locplc || '<span class="text-gray-300">-</span>'}</td>
             <td class="px-4 py-3 text-center">${CommonUtils.formatNumber(item.contractCount)}</td>
             <td class="px-4 py-3 text-right font-medium">${CommonUtils.formatCurrency(item.amount)}</td>
         `;
@@ -150,6 +190,22 @@ function renderSupplierTable(data) {
 function showSupplierDetail(key) {
     const supplierName = (currentFilteredData.find(item => supplierKey(item) === key) || {}).supplier || key;
     const detailPanel = document.getElementById('supplierDetailPanel');
+    const inf = infoOf(key);
+    const infoBlock = inf ? `
+            <div class="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4 text-sm">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-1">
+                    <div><span class="text-gray-500 mr-1">본사소재지</span>${esc(inf['본사소재지']) || '-'}</div>
+                    <div><span class="text-gray-500 mr-1">공장소재지</span>${esc(inf['공장소재지']) || '-'}</div>
+                    <div><span class="text-gray-500 mr-1">기업규모</span>${esc(inf['기업규모']) || '-'}</div>
+                    <div><span class="text-gray-500 mr-1">담당부서</span>${esc(inf['담당부서']) || '-'} ${esc(inf['담당전화'])}</div>
+                    <div><span class="text-gray-500 mr-1">우선구매대상</span>${esc(inf['우선구매인증']) || '-'}</div>
+                    <div><span class="text-gray-500 mr-1">의무구매대상</span>${esc(inf['의무구매인증']) || '-'}</div>
+                    <div class="md:col-span-2"><span class="text-gray-500 mr-1">품질인증</span>${esc(inf['품질인증']) || '-'}</div>
+                    <div class="md:col-span-2"><span class="text-gray-500 mr-1">제품인증</span>${esc(inf['제품인증']) || '-'}</div>
+                </div>
+                <div class="text-xs text-gray-400 mt-2">출처: 조달청 종합쇼핑몰 다수공급자계약(MAS) · 갱신 ${esc(inf['갱신일'])}</div>
+            </div>` : `
+            <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 text-sm text-amber-700">조달청 종합쇼핑몰(MAS) 미등록 — 업체 소재지·인증 정보 없음</div>`;
     detailPanel.innerHTML = `
         <div class="p-6 printable-area">
             <div class="flex justify-between items-center mb-4">
@@ -160,11 +216,12 @@ function showSupplierDetail(key) {
                     <button id="backToListBtn" class="btn btn-secondary btn-sm">목록으로</button>
                 </div>
             </div>
+            ${infoBlock}
             <div class="overflow-x-auto">
                 <table id="supplierDetailTable" class="min-w-full divide-y divide-gray-200 data-table">
                     <thead class="bg-gray-50"><tr>
                         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="agency" data-sort-type="string"><span>수요기관명</span></th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="region" data-sort-type="string"><span>소재지</span></th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="region" data-sort-type="string"><span>수요기관 지역</span></th>
                         <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="amount" data-sort-type="number"><span>업체 판매금액</span></th>
                         <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="totalAmount" data-sort-type="number"><span>수요기관 전체 구매액</span></th>
                     </tr></thead>
