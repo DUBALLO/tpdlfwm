@@ -1,5 +1,5 @@
 // 주문 관리 — 데이터 로드 + 칸반 렌더링 + 새 거래 입력 폼 (Phase 3-3(B))
-console.log('%c[order-management.js v=20260615c 로드됨 — 상단바 개편(통합검색·구분 견적적용·운송형태 삭제·완료 전체연도)]', 'color:#10b981; font-weight:bold');
+console.log('%c[order-management.js v=20260618b 로드됨 — D1 모바일 송장(배차별 📤 공유)]', 'color:#10b981; font-weight:bold');
 
 const ORDER_DB_BASE = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRum7_WBDKTJSA8B1ATxqpd3BtvjXnPLNQXuMpQsx0q4HVmwm_-JRQLCjy-FrYryIBPuxYkhV7F1nWq/pub';
 const ORDER_SHEET_ID = '13-TkPYeGAaXjPrVxdy_vTf83tvKxqolkK7rfgE4e-1o';
@@ -22,8 +22,21 @@ const PRICE_DB_TABS = {
     privatePrices:  504592354   // 사급단가
 };
 
-// GAS Web App (시트 쓰기)
+// GAS Web App (시트 쓰기 + printInvoice GET)
 const GAS_WRITE_URL = 'https://script.google.com/macros/s/AKfycbxM128rPA6TSQltBIOuiB2zGQB--n9S-V93jNLGxTLJZnwBpUMfgiG1BMZDwCXufW2f/exec';
+
+// ===== 모바일 송장(D1) — 설정값 =====
+// 회신번호 = 사무실(설정값으로 분리). 표준 메모는 기사에게 보내는 현장 안내 보일러플레이트(편집 가능).
+const OFFICE_REPLY_PHONE = '010-9590-1424';
+const MOBILE_INVOICE_MEMO = [
+    '─────────────',
+    'ㅇ현장 안내',
+    '- 납품확인서·송장(인수용) 1부 현장 전달',
+    '- 서명 후 서명 부분 사진 촬영',
+    '- 하차 사진 가로 2장',
+    '- 세금계산서와 함께 회신번호로 전송',
+    `회신: ${OFFICE_REPLY_PHONE}`
+].join('\n');
 
 // ===== 시간 입력 (시/분 select 2개) — 모든 도착시간 폼이 동일 패턴 =====
 const HOUR_OPTS = '<option value="">--시</option>' + Array.from({length:24}, (_,i)=>{const v=String(i).padStart(2,'0');return `<option value="${v}">${v}시</option>`}).join('');
@@ -2020,6 +2033,97 @@ function isDeliveryFormOpen() {
     return document.getElementById('newDeliveryPanel').classList.contains('open');
 }
 
+// ===== 모바일 송장(D1) — 텍스트+링크 공유 =====
+// 정식 송장(invoice-print.html)과 동일한 GAS printInvoice 데이터를 써서 배차(차량) 1대분
+// 텍스트를 만들고 navigator.share(공유시트→카톡)로 기사에게 전송. 미지원 시 클립보드 복사.
+
+// "2026-06-10" + "08:00" → "2026-6-10(수) 08:00" / 시간 비면 "당착"
+function fmtMobileDateTime(dateStr, timeStr) {
+    const WD = ['일', '월', '화', '수', '목', '금', '토'];
+    let head = String(dateStr || '').trim();
+    const m = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(head);
+    if (m) {
+        const y = +m[1], mo = +m[2], d = +m[3];
+        head = `${y}-${mo}-${d}(${WD[new Date(y, mo - 1, d).getDay()]})`;
+    }
+    const t = String(timeStr || '').trim();
+    return head ? `${head} ${t || '당착'}` : (t || '');
+}
+
+// 배차 1대 → 기사용 송장 텍스트. 포맷: 주소 → 네이버링크 → 받는분 → 도착 → ㅇ배송 내역 → (선택)표준메모
+function buildMobileInvoiceText(data, batch, includeMemo) {
+    const 배송 = data.배송 || {};
+    const out = [];
+    if (batch.주소) out.push(String(batch.주소).trim());
+    if (batch.주소링크) out.push(String(batch.주소링크).trim());
+    out.push('');
+    const recv = [배송.인수자명, 배송.인수자전화].map(s => String(s || '').trim()).filter(Boolean).join(' ');
+    if (recv) out.push(`받는분: ${recv}`);
+    const when = fmtMobileDateTime(배송.배송일자 || 배송.출고일자, 배송.배송시간);  // 정식 송장(invoice-print 납품일시)과 동일 기준
+    if (when) out.push(`도착: ${when}`);
+    out.push('');
+    out.push('ㅇ배송 내역');
+    (batch.items || []).forEach((it, i) => {
+        const parts = [it.품목, it.품명, it.규격].map(s => String(s || '').trim()).filter(Boolean);
+        const qty = [CommonUtils.formatNumber(it.수량), String(it.단위 || '').trim()].filter(Boolean).join('');
+        out.push(`${i + 1}. ${parts.join(' ')}${qty ? ' ' + qty : ''}`.trim());
+    });
+    if (includeMemo) { out.push(''); out.push(MOBILE_INVOICE_MEMO); }
+    return out.join('\n');
+}
+
+// 미리보기 모달(편집 가능 textarea) + 공유/복사 버튼
+function openMobileInvoiceModal(data, batch) {
+    const text = buildMobileInvoiceText(data, batch, true);
+    const canShare = typeof navigator !== 'undefined' && !!navigator.share;
+    const html = `
+        <p style="font-size:0.8rem; color:#6b7280; margin-bottom:0.5rem;">기사에게 보낼 내용입니다. 필요하면 수정한 뒤 공유하세요.</p>
+        <textarea id="mobileInvoiceText" style="width:100%; height:340px; padding:0.75rem; border:1px solid #d1d5db; border-radius:0.375rem; font-size:0.85rem; font-family:inherit; line-height:1.5; resize:vertical;">${escapeHtml(text)}</textarea>
+        <div style="display:flex; gap:0.5rem; justify-content:flex-end; margin-top:0.75rem;">
+            ${canShare ? '<button id="mobileInvoiceShareBtn" class="btn btn-success">📤 공유</button>' : ''}
+            <button id="mobileInvoiceCopyBtn" class="btn btn-secondary">📋 복사</button>
+        </div>
+    `;
+    CommonUtils.showModal(`모바일 송장 — 배차 ${escapeHtml(batch.배차번호)}`, html, { width: '480px' });
+
+    const getText = () => document.getElementById('mobileInvoiceText').value;
+    if (canShare) {
+        document.getElementById('mobileInvoiceShareBtn').addEventListener('click', async () => {
+            try { await navigator.share({ text: getText() }); }
+            catch (e) { /* 사용자가 공유 취소 — 무시 */ }
+        });
+    }
+    document.getElementById('mobileInvoiceCopyBtn').addEventListener('click', async () => {
+        const ta = document.getElementById('mobileInvoiceText');
+        try {
+            await navigator.clipboard.writeText(ta.value);
+            CommonUtils.showAlert('클립보드에 복사되었습니다.', 'success');
+        } catch (e) {
+            ta.select(); document.execCommand('copy');  // 폴백(비-HTTPS·구형)
+            CommonUtils.showAlert('복사되었습니다.', 'success');
+        }
+    });
+}
+
+// 배차 블록의 [📤 모바일] 버튼 핸들러 — GAS printInvoice fetch → 해당 배차 필터 → 모달
+async function shareMobileInvoice(deliveryNo, 배차번호) {
+    let data;
+    try {
+        const res = await fetch(`${GAS_WRITE_URL}?printInvoice=${encodeURIComponent(deliveryNo)}`);
+        data = await res.json();
+    } catch (err) {
+        CommonUtils.showAlert('송장 데이터를 불러오지 못했습니다: ' + err.message, 'error');
+        return;
+    }
+    if (!data || !data.ok) {
+        CommonUtils.showAlert('송장 데이터 오류: ' + ((data && data.error) || '알 수 없음'), 'error');
+        return;
+    }
+    const batch = (data.배차들 || []).find(b => String(b.배차번호) === String(배차번호));
+    if (!batch) { CommonUtils.showAlert(`배차 ${배차번호}번을 찾을 수 없습니다.`, 'error'); return; }
+    openMobileInvoiceModal(data, batch);
+}
+
 // ===== 배차 블록 동적 추가 =====
 // prepopulate: { 차종, 배송구분, 주소, 주소링크, items: [...] } (편집/신규 디폴트 공용)
 // meta: { 배송번호 } - 편집 모드일 때 송장 출력 버튼 활성화
@@ -2087,6 +2191,7 @@ function addDispatchBlock(prepopulate = null, meta = null) {
     const canPrint = !!(meta && meta.배송번호);
     const printBtn = canPrint
         ? `<button type="button" class="btn btn-warning print-invoice-btn" style="font-size:0.75rem; padding:0.25rem 0.5rem;" data-delivery-id="${escapeHtml(meta.배송번호)}" data-dispatch-no="${idx}" title="이 배차(차량)의 송장 출력">송장 출력</button>`
+          + `<button type="button" class="btn btn-success mobile-invoice-btn" style="font-size:0.75rem; padding:0.25rem 0.5rem;" data-delivery-id="${escapeHtml(meta.배송번호)}" data-dispatch-no="${idx}" title="기사에게 보낼 모바일 송장(주소·전화 자동 링크) — 카톡 공유">📤 모바일</button>`
         : `<button type="button" class="btn btn-secondary print-invoice-btn" style="font-size:0.75rem; padding:0.25rem 0.5rem;" disabled title="저장 후 사용 가능">송장 출력</button>`;
 
     block.innerHTML = `
@@ -2142,6 +2247,10 @@ function addDispatchBlock(prepopulate = null, meta = null) {
         block.querySelector('.print-invoice-btn').addEventListener('click', (e) => {
             const b = e.currentTarget;
             window.open(`invoice-print.html?배송번호=${encodeURIComponent(b.dataset.deliveryId)}&배차=${encodeURIComponent(b.dataset.dispatchNo)}`, '_blank');
+        });
+        block.querySelector('.mobile-invoice-btn').addEventListener('click', (e) => {
+            const b = e.currentTarget;
+            shareMobileInvoice(b.dataset.deliveryId, b.dataset.dispatchNo);
         });
     }
     block.querySelectorAll('.qty-input').forEach(input => {
