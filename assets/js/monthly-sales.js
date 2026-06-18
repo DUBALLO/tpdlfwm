@@ -1,5 +1,5 @@
 // 월별매출 현황 JavaScript (날짜 처리 오류 수정 최종본)
-console.log('%c[monthly-sales.js v=20260617a — 병합키 주문번호 + 새로고침/기본연도 수정]', 'color:#0ea5e9; font-weight:bold');
+console.log('%c[monthly-sales.js v=20260618a — 매출 추이 그래프(트랙E, 트렌드분석 월별추이 이식) 추가]', 'color:#0ea5e9; font-weight:bold');
 
 // 전역 변수
 let salesData = [];
@@ -87,6 +87,7 @@ async function loadSalesData() {
                 const baseItem = {
                     contractName: contractValue, customer: customerValue, orderNo: (deal['주문번호'] || '').trim(),
                     amount: parsedAmount, item: (l['품명'] || l['품목'] || '').trim(), spec: (l['규격'] || '').trim(),
+                    category: (l['품목'] || '').trim(),   // 품목 카테고리(보행매트/식생매트/논슬립...) — 추이 품목필터용
                     quantity: toNum(l['수량']), unitPrice: toNum(l['단가'])
                 };
                 salesData.push({ ...baseItem, date: recordDate, type: invoiceDate ? '납품완료' : '주문' });
@@ -97,6 +98,9 @@ async function loadSalesData() {
             });
         });
         generateReport();
+        populateTrendControls();
+        const tp = document.getElementById('trendPanel');
+        if (tp && !tp.classList.contains('hidden')) renderSalesTrend();
         return true;
     } catch (error) {
         console.error('CSV 로드 실패:', error);
@@ -386,6 +390,143 @@ function showContractItemDetail(item) {
 
 function hideDetailSection() { $('detailSection').classList.add('hidden'); }
 
+// ===== 매출 추이 그래프 (트랙 E — 트렌드분석 '월별 판매 추이'를 A소스로 이식) =====
+// 매출 = 세금계산서일자 기준(관급매출/사급매출 레코드). 기준연도(전체평균 포함) vs 분석연도 2개 라인.
+let trendChartInstance = null;
+const TREND_MONTHS = ['1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'];
+const TREND_COLORS = {
+    base: { bg: 'rgba(148, 163, 184, 0.12)', border: 'rgba(100, 116, 139, 0.9)' }, // 기준/평균 — 회색
+    comp: { bg: 'rgba(16, 185, 129, 0.15)', border: 'rgba(16, 185, 129, 1)' }       // 분석연도(올해) — 초록 강조
+};
+
+function trendRevenueRecords() {
+    // 매출(세금계산서 기준) 레코드만: 관급매출 / 사급매출
+    return salesData.filter(d => d.type === '관급매출' || d.type === '사급매출');
+}
+
+function populateTrendControls() {
+    const baseSel = document.getElementById('trendBaseYear');
+    const compSel = document.getElementById('trendCompYear');
+    const prodSel = document.getElementById('trendProduct');
+    if (!baseSel || !compSel || !prodSel) return;
+
+    const recs = trendRevenueRecords();
+    let years = [...new Set(recs.map(d => d.date.getFullYear()))];
+    const currentYear = new Date().getFullYear();
+    if (!years.includes(currentYear)) years.push(currentYear);
+    years.sort((a, b) => b - a);
+
+    baseSel.innerHTML = '<option value="all_avg">전체(평균)</option>';
+    compSel.innerHTML = '';
+    years.forEach(y => { baseSel.add(new Option(`${y}년`, y)); compSel.add(new Option(`${y}년`, y)); });
+    baseSel.value = 'all_avg';
+    compSel.value = String(currentYear);
+
+    // 품목: 매출 레코드의 실제 카테고리, 매출액 큰 순(데이터 기반 — 코드 추측 없음)
+    const byCat = {};
+    recs.forEach(d => { const c = d.category || '(미분류)'; byCat[c] = (byCat[c] || 0) + d.amount; });
+    const cats = Object.keys(byCat).sort((a, b) => byCat[b] - byCat[a]);
+    prodSel.innerHTML = '<option value="all">전체</option>';
+    cats.forEach(c => prodSel.add(new Option(c, c)));
+    prodSel.value = 'all';
+}
+
+function trendAggregateMonthly(records) {
+    const monthly = Array(12).fill(0);
+    records.forEach(d => { monthly[d.date.getMonth()] += d.amount; });
+    return monthly;
+}
+
+function renderSalesTrend() {
+    if (!salesData.length) return;
+    const baseYear = $('trendBaseYear').value;
+    const compYear = $('trendCompYear').value;
+    const nature = $('trendNature').value;    // all | 관급 | 사급
+    const product = $('trendProduct').value;  // all | <카테고리>
+
+    let recs = trendRevenueRecords();
+    if (nature === '관급') recs = recs.filter(d => d.type === '관급매출');
+    else if (nature === '사급') recs = recs.filter(d => d.type === '사급매출');
+    if (product !== 'all') recs = recs.filter(d => (d.category || '') === product);
+
+    const compRecs = recs.filter(d => String(d.date.getFullYear()) === String(compYear));
+    const yearsInData = [...new Set(recs.map(d => d.date.getFullYear()))];
+
+    let baseRecs, baseLabel;
+    if (baseYear === 'all_avg') {
+        const avgYears = yearsInData.filter(y => String(y) !== String(compYear));
+        baseRecs = recs.filter(d => avgYears.includes(d.date.getFullYear()));
+        baseLabel = `전체 평균 (${avgYears.length}년)`;
+    } else {
+        baseRecs = recs.filter(d => String(d.date.getFullYear()) === String(baseYear));
+        baseLabel = `${baseYear}년`;
+    }
+
+    let baseMonthly = trendAggregateMonthly(baseRecs);
+    if (baseYear === 'all_avg') {
+        const n = [...new Set(baseRecs.map(d => d.date.getFullYear()))].length;
+        if (n > 0) baseMonthly = baseMonthly.map(v => v / n);
+    }
+
+    let compMonthly = trendAggregateMonthly(compRecs);
+    // 분석연도가 올해면 현재월 이후는 null → "지금 시점"까지만 그림(0으로 추락 방지)
+    const now = new Date();
+    if (Number(compYear) === now.getFullYear()) {
+        const lastIdx = now.getMonth();
+        compMonthly = compMonthly.map((v, i) => i <= lastIdx ? v : null);
+    }
+
+    renderTrendChart(TREND_MONTHS, [
+        { label: baseLabel, data: baseMonthly, backgroundColor: TREND_COLORS.base.bg, borderColor: TREND_COLORS.base.border, borderWidth: 2, fill: true, tension: 0.3, pointRadius: 2 },
+        { label: `${compYear}년`, data: compMonthly, backgroundColor: TREND_COLORS.comp.bg, borderColor: TREND_COLORS.comp.border, borderWidth: 2.5, fill: true, tension: 0.3, pointRadius: 3 }
+    ]);
+    renderTrendTable(baseLabel, baseMonthly, `${compYear}년`, compMonthly);
+}
+
+function renderTrendChart(labels, datasets) {
+    if (trendChartInstance) trendChartInstance.destroy();
+    const ctx = document.getElementById('salesTrendChart').getContext('2d');
+    trendChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: { labels, datasets },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            scales: { y: { beginAtZero: true, ticks: { callback: v => CommonUtils.formatCurrency(v) } } },
+            plugins: { tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.parsed.y == null ? '-' : CommonUtils.formatCurrency(c.parsed.y)}` } } }
+        }
+    });
+}
+
+function renderTrendTable(baseLabel, baseArr, compLabel, compArr) {
+    const fmt = v => (v == null ? '-' : CommonUtils.formatCurrency(v));
+    const rowHtml = (label, arr) => {
+        const sum = arr.reduce((a, b) => a + (b || 0), 0);
+        const cols = arr.map(v => `<td class="px-2 py-2 text-right text-sm whitespace-nowrap">${fmt(v)}</td>`).join('');
+        return `<tr class="hover:bg-gray-50"><td class="px-3 py-2 text-sm font-semibold text-gray-700 bg-gray-50/50 whitespace-nowrap">${label}</td><td class="px-3 py-2 text-right font-bold border-r-2 whitespace-nowrap">${CommonUtils.formatCurrency(sum)}</td>${cols}</tr>`;
+    };
+    const el = document.getElementById('trendDataTable');
+    if (!el) return;
+    el.innerHTML = `
+        <table class="min-w-full divide-y divide-gray-200 border text-sm">
+            <thead class="bg-gray-100"><tr>
+                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 w-28">구분</th>
+                <th class="px-3 py-2 text-right text-xs font-bold text-gray-700 border-r-2 w-36">연간 합계</th>
+                ${TREND_MONTHS.map(m => `<th class="px-2 py-2 text-right text-xs font-medium text-gray-500">${m}</th>`).join('')}
+            </tr></thead>
+            <tbody class="bg-white divide-y divide-gray-200">${rowHtml(baseLabel, baseArr)}${rowHtml(compLabel, compArr)}</tbody>
+        </table>`;
+}
+
+function toggleTrendPanel() {
+    const panel = document.getElementById('trendPanel');
+    const chevron = document.getElementById('trendChevron');
+    const opening = panel.classList.contains('hidden');
+    panel.classList.toggle('hidden');
+    if (chevron) chevron.classList.toggle('rotate-180', opening);
+    if (opening) renderSalesTrend();
+}
+
 async function refreshData() {
     CommonUtils.toggleLoading($('refreshBtn'), true);
     try {
@@ -406,6 +547,15 @@ window.hideDetailSection = hideDetailSection;
 
 document.addEventListener('DOMContentLoaded', function() {
     $('searchBtn').addEventListener('click', generateReport);
+
+    // 매출 추이 토글 + 필터 바인딩 (트랙 E)
+    const trendToggle = document.getElementById('trendToggle');
+    if (trendToggle) trendToggle.addEventListener('click', toggleTrendPanel);
+    ['trendBaseYear', 'trendCompYear', 'trendNature', 'trendProduct'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('change', renderSalesTrend);
+    });
+
     let attempts = 0;
     const interval = setInterval(() => {
         if (window.sheetsAPI && window.CommonUtils) {

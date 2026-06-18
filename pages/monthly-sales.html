@@ -9,6 +9,7 @@
     <link rel="apple-touch-icon" href="/icons/icon-192.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="../assets/css/common.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="../assets/js/sheets-api.js?v=20260615h"></script>
 <style>
     @media screen {
@@ -241,6 +242,42 @@
             </div>
         </div>
 
+        <div class="bg-white rounded-lg shadow-md mb-8 no-print">
+            <button id="trendToggle" type="button" class="w-full flex items-center justify-between p-6 text-left focus:outline-none">
+                <span class="text-xl font-semibold text-gray-900">📈 매출 추이 — 동년·평균 비교</span>
+                <svg id="trendChevron" class="w-5 h-5 text-gray-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+            </button>
+            <div id="trendPanel" class="hidden px-6 pb-6">
+                <p class="text-sm text-gray-500 mb-4">세금계산서 발행 기준(실현매출). 분석연도(올해)는 현재월까지 표시. 기준연도를 특정 연도로 바꾸면 그 해와 비교됩니다.</p>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                    <div>
+                        <label class="form-label">기준연도</label>
+                        <select id="trendBaseYear" class="form-select"></select>
+                    </div>
+                    <div>
+                        <label class="form-label">분석연도</label>
+                        <select id="trendCompYear" class="form-select"></select>
+                    </div>
+                    <div>
+                        <label class="form-label">구분</label>
+                        <select id="trendNature" class="form-select">
+                            <option value="all" selected>전체</option>
+                            <option value="관급">관급</option>
+                            <option value="사급">사급</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label">품목</label>
+                        <select id="trendProduct" class="form-select"></select>
+                    </div>
+                </div>
+                <div class="h-80 relative">
+                    <canvas id="salesTrendChart"></canvas>
+                </div>
+                <div id="trendDataTable" class="mt-6 overflow-x-auto"></div>
+            </div>
+        </div>
+
         <div id="detailSection" class="bg-white rounded-lg shadow-md p-6 hidden">
             <div class="flex justify-between items-center mb-4">
                 <h2 id="detailTitle" class="text-xl font-semibold text-gray-900">상세 계약 내역</h2>
@@ -257,7 +294,7 @@
     </main>
 
     <script src="../assets/js/common.js"></script>
-    <script src="../assets/js/monthly-sales.js?v=20260617a"></script>
+    <script src="../assets/js/monthly-sales.js?v=20260618a"></script>
     
     <script>
         document.addEventListener('DOMContentLoaded', function() {
