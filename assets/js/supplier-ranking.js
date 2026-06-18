@@ -1,5 +1,18 @@
 // supplier-ranking.js
-console.log('%c[supplier-ranking.js v=20260617a — 공급금액 부호보존(규칙2) + 소재지 필터]', 'color:#0ea5e9; font-weight:bold');
+console.log('%c[supplier-ranking.js v=20260618a — 업체정보 갱신 버튼 + 공급금액 부호보존]', 'color:#0ea5e9; font-weight:bold');
+
+// GAS 쓰기 호출 (order-management.js callGAS 패턴 복제) — 업체정보 온디맨드 갱신용
+const GAS_WRITE_URL = 'https://script.google.com/macros/s/AKfycbxM128rPA6TSQltBIOuiB2zGQB--n9S-V93jNLGxTLJZnwBpUMfgiG1BMZDwCXufW2f/exec';
+async function callGAS(action, payload = {}) {
+    const _requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const res = await fetch(GAS_WRITE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // CORS preflight 회피
+        body: JSON.stringify({ action, _requestId, ...payload })
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+}
 
 // 전역 변수
 let allData = [];
@@ -52,12 +65,35 @@ function populateRegionFilter() {
     sel.innerHTML = '<option value="all">전체</option>' + sidos.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
 }
 
+// 업체정보 온디맨드 갱신 — GAS buildSupplierInfoSheet 호출(조달청 MAS 재수집). 게시 CSV 반영엔 시차 있을 수 있음.
+async function refreshSupplierInfo() {
+    if (!confirm('업체정보를 갱신할까요? 조달청 MAS에서 다시 수집하며 최대 1~2분 걸릴 수 있습니다.')) return;
+    const btn = document.getElementById('refreshSupplierBtn');
+    CommonUtils.toggleLoading(btn, true);
+    try {
+        const r = await callGAS('buildSupplierInfo', {});
+        if (r && r.ok) {
+            CommonUtils.showAlert(`업체정보 ${CommonUtils.formatNumber(r.업체수 || 0)}곳 갱신 완료. 새 소재지·인증은 잠시 후(시트 게시 반영) 보입니다.`, 'success');
+            await loadSupplierInfo();
+            populateRegionFilter();
+            await analyzeData();
+        } else {
+            CommonUtils.showAlert('업체정보 갱신 실패: ' + ((r && r.error) || '알 수 없는 오류'), 'error');
+        }
+    } catch (e) {
+        CommonUtils.showAlert('업체정보 갱신 실패: ' + e.message, 'error');
+    } finally {
+        CommonUtils.toggleLoading(btn, false);
+    }
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
     try {
         const [data] = await Promise.all([loadAndParseData(), loadSupplierInfo()]);
         allData = data;
         populateRegionFilter();
         document.getElementById('analyzeBtn').addEventListener('click', analyzeData);
+        document.getElementById('refreshSupplierBtn')?.addEventListener('click', refreshSupplierInfo);
         await analyzeData();
     } catch (error) {
         console.error("초기화 실패:", error);
