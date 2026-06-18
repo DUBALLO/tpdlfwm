@@ -1,5 +1,5 @@
 // 월별매출 현황 JavaScript (날짜 처리 오류 수정 최종본)
-console.log('%c[monthly-sales.js v=20260615d — 주문관리 deals 소스 전환(Phase 7)]', 'color:#0ea5e9; font-weight:bold');
+console.log('%c[monthly-sales.js v=20260617a — 병합키 주문번호 + 새로고침/기본연도 수정]', 'color:#0ea5e9; font-weight:bold');
 
 // 전역 변수
 let salesData = [];
@@ -85,7 +85,7 @@ async function loadSalesData() {
                 const parsedAmount = toNum(l['합계']);
                 if (parsedAmount === 0) return;
                 const baseItem = {
-                    contractName: contractValue, customer: customerValue,
+                    contractName: contractValue, customer: customerValue, orderNo: (deal['주문번호'] || '').trim(),
                     amount: parsedAmount, item: (l['품명'] || l['품목'] || '').trim(), spec: (l['규격'] || '').trim(),
                     quantity: toNum(l['수량']), unitPrice: toNum(l['단가'])
                 };
@@ -97,9 +97,11 @@ async function loadSalesData() {
             });
         });
         generateReport();
+        return true;
     } catch (error) {
         console.error('CSV 로드 실패:', error);
         CommonUtils.showAlert(`데이터 로드 실패: ${error.message}.`, 'error');
+        return false;
     }
 }
 
@@ -130,7 +132,7 @@ function aggregateData(monthlyData, startDate, endDate) {
         if (item.date >= startDate && item.date <= endDate) {
             const yearMonth = CommonUtils.getYearMonth(item.date.getFullYear(), item.date.getMonth() + 1);
             if (!monthlyData[yearMonth]) return;
-            const contractKey = `${item.contractName}-${item.customer}`;
+            const contractKey = item.orderNo || `${item.contractName}-${item.customer}`;  // 건수는 주문번호 단위(동명 분할발주 분리)
             let target;
             if (item.type === '주문' || item.type === '납품완료') target = monthlyData[yearMonth].order;
             else if (item.type === '관급매출') target = monthlyData[yearMonth].government;
@@ -250,7 +252,7 @@ function processDetailData(details, type) {
     });
 
     relevantDetails.forEach(item => {
-        const key = `${item.contractName}-${item.customer}`;
+        const key = item.orderNo || `${item.contractName}-${item.customer}`;  // 상세도 주문번호 단위로 분리
         if (mergedData.has(key)) {
             const existing = mergedData.get(key);
             existing.totalAmount += item.amount;
@@ -387,11 +389,10 @@ function hideDetailSection() { $('detailSection').classList.add('hidden'); }
 async function refreshData() {
     CommonUtils.toggleLoading($('refreshBtn'), true);
     try {
-        await window.sheetsAPI.refreshCache();
-        await loadSalesData();
-        CommonUtils.showAlert('데이터가 새로고침되었습니다.', 'success');
-    } catch (error) {
-        CommonUtils.showAlert('데이터 새로고침에 실패했습니다.', 'error');
+        // Phase 7 이후 이 페이지는 sheetsAPI 미사용 — fetchOrderDb가 cache:'no-store'라 별도 캐시 무효화 불필요(없는 refreshCache 호출 제거)
+        const ok = await loadSalesData();
+        if (ok) CommonUtils.showAlert('데이터가 새로고침되었습니다.', 'success');
+        // 실패 시 loadSalesData가 이미 구체 오류를 표시함
     } finally {
         CommonUtils.toggleLoading($('refreshBtn'), false);
     }

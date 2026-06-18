@@ -1,5 +1,5 @@
 // supplier-ranking.js
-console.log('%c[supplier-ranking.js v=20260615g — 업체 소재지(시/도) 필터 추가]', 'color:#0ea5e9; font-weight:bold');
+console.log('%c[supplier-ranking.js v=20260617a — 공급금액 부호보존(규칙2) + 소재지 필터]', 'color:#0ea5e9; font-weight:bold');
 
 // 전역 변수
 let allData = [];
@@ -74,7 +74,7 @@ async function loadAndParseData() {
     
     // 어떤 데이터가 들어와도 오류가 나지 않도록 안전하게 처리합니다.
     return rawData.map(item => {
-        const amountStr = String(item['공급금액'] || '0').replace(/[^\d]/g, '');
+        const amount = CommonUtils.parseSignedAmount(item['공급금액']);  // 공통추출(common.js)
         return {
             agency: (item['수요기관명'] || '').trim(),
             supplier: (item['업체'] || '').trim(),
@@ -82,11 +82,11 @@ async function loadAndParseData() {
             region: (item['수요기관지역'] || '').trim().split(' ')[0],
             agencyType: item['소관구분'] || '기타',
             product: (item['세부품명'] || '').trim(),
-            amount: amountStr ? parseInt(amountStr, 10) : 0,
+            amount,
             date: item['기준일자'] || '',
             contractName: (item['계약명'] || '').trim()
         };
-    }).filter(item => item.supplier && item.agency && item.amount > 0); // 유효한 데이터만 필터링
+    }).filter(item => item.supplier && item.agency && item.amount > 0); // 양수 매출만 (취소·감액 0/음수 제외)
 }
 
 

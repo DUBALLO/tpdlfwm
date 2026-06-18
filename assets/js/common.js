@@ -157,8 +157,30 @@ if (document.readyState === 'loading') {
     initAutoYearSelection();
 }
 
+// 조달 공급금액 등 부호 보존 숫자 파싱 (4개 조달 분석 페이지 공용 — [^\d]만 쓰면 음수 취소·감액이 양수로 둔갑, 핵심규칙2 위반)
+function parseSignedAmount(value) {
+    const cleaned = String(value ?? '').replace(/[^\d.-]/g, '');
+    if (cleaned === '' || cleaned === '-' || cleaned === '.' || cleaned === '-.') return 0;
+    return Number(cleaned) || 0;
+}
+
+// 물품식별명 파싱: "세부품명, 업체단축명, 모델, 규격..." (parts[0]=세부품명 전수검증 완료)
+// parts>=4: 모델=parts[2]/규격=slice(3) · 3: 규격='-' · 2: 모델='-'/규격=parts[1] · <=1: 통짜 raw
+function parseProductIdentName(fullName) {
+    const raw = String(fullName || '').trim();
+    if (!raw) return { model: '-', spec: '-', raw: '' };
+    const parts = raw.split(',').map(s => s.trim()).filter(Boolean);
+    const n = parts.length;
+    if (n >= 4) return { model: parts[2], spec: parts.slice(3).join(', '), raw };
+    if (n === 3) return { model: parts[2], spec: '-', raw };
+    if (n === 2) return { model: '-', spec: parts[1], raw };
+    return { model: '-', spec: '-', raw };
+}
+
 window.CommonUtils = {
     formatCurrency,
+    parseSignedAmount,
+    parseProductIdentName,
     formatNumber,
     formatDate,
     getYearMonth,

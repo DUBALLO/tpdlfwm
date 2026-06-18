@@ -1,4 +1,5 @@
 // customer-analysis.js
+console.log('%c[customer-analysis.js v=20260617a — 고정핀 옵션 제거 + 인쇄 KPI/지역칼럼(P3-1·P3-2)]', 'color:#0ea5e9; font-weight:bold');
 
 // 전역 변수
 let allGovernmentData = [];        // 원본 라인 데이터
@@ -28,11 +29,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 async function loadAndParseProcurementData() {
     if (!window.sheetsAPI) throw new Error('sheets-api.js가 로드되지 않았습니다.');
 
-    const parseSignedAmount = (value) => {
-        const cleaned = String(value ?? '').replace(/[^\d.-]/g, '');
-        if (cleaned === '' || cleaned === '-' || cleaned === '.' || cleaned === '-.') return 0;
-        return Number(cleaned) || 0;
-    };
+    const parseSignedAmount = CommonUtils.parseSignedAmount;  // 공통추출(common.js)
 
     const parseContractOrder = (item) => {
         const candidates = [
@@ -274,7 +271,7 @@ function renderCustomerTable(data) {
             customerMap.set(item.customer, {
                 contracts: [],
                 amount: 0,
-                region: item.regionFull,
+                region: item.region,  // 광역만(지역별/소관 탭과 단위 통일; 시군은 수요기관명에 포함)
                 agencyType: item.agencyType
             });
         }
@@ -522,19 +519,6 @@ function renderDetailTable() {
     updateSortIndicators('detailTable', sortStates.detail);
 }
 
-// 물품식별명 파싱: "세부품명, 업체단축명, 모델, 규격..." 구조 가정.
-// parts[0]==세부품명은 전수 검증 완료(54,581건 mismatch 0). 1/3-part는 통짜 또는 모델만.
-function parseProductIdentName(fullName) {
-    const raw = String(fullName || '').trim();
-    if (!raw) return { model: '-', spec: '-', raw: '' };
-    const parts = raw.split(',').map(s => s.trim()).filter(Boolean);
-    const n = parts.length;
-    if (n >= 4) return { model: parts[2], spec: parts.slice(3).join(', '), raw };
-    if (n === 3) return { model: parts[2], spec: '-', raw };
-    if (n === 2) return { model: '-', spec: parts[1], raw };
-    return { model: '-', spec: '-', raw };
-}
-
 function showContractItemsPopup(summary) {
     if (!summary) return;
     const items = Array.isArray(summary.lineItems) ? summary.lineItems : [];
@@ -558,7 +542,7 @@ function showContractItemsPopup(summary) {
 
         const sorted = [...items].sort((a, b) => (b.amount || 0) - (a.amount || 0));
         sorted.forEach(line => {
-            const { model, spec, raw } = parseProductIdentName(line.fullProductName);
+            const { model, spec, raw } = CommonUtils.parseProductIdentName(line.fullProductName);
             const specCell = (spec === '-' && raw)
                 ? `<span class="text-gray-500" title="원본">${raw}</span>`
                 : spec;

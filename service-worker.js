@@ -1,5 +1,5 @@
 // Service Worker for PWA — v60 강제 캐시 폐기 + 클라이언트 reload
-const CACHE_NAME = 'dashboard-v97';
+const CACHE_NAME = 'dashboard-v98';
 
 // 설치: 즉시 활성화 (캐시 prefetch 없음 — fetch 시 채워짐)
 self.addEventListener('install', event => {

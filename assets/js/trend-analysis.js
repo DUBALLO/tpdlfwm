@@ -7,7 +7,7 @@ let chartInstances = {};
 document.addEventListener('DOMContentLoaded', async () => {
     showLoadingState(true, '모든 품목의 데이터를 로딩 중입니다...');
     try {
-        allData = await loadAndParseAllData();
+        allData = await loadAndParseProcurementData();
         populateYearFilters();
 
         document.getElementById('analyzeBtn').addEventListener('click', analyzeTrends);
@@ -25,11 +25,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 async function loadAndParseProcurementData() {
     if (!window.sheetsAPI) throw new Error('sheets-api.js가 로드되지 않았습니다.');
 
-    const parseSignedAmount = (value) => {
-        const cleaned = String(value ?? '').replace(/[^\d.-]/g, '');
-        if (cleaned === '' || cleaned === '-' || cleaned === '.' || cleaned === '-.') return 0;
-        return parseInt(cleaned, 10) || 0;
-    };
+    const parseSignedAmount = CommonUtils.parseSignedAmount;  // 공통추출(common.js — Number 기준으로 통일)
 
     const rawData = await window.sheetsAPI.loadAllProcurementData();
 
@@ -40,7 +36,7 @@ async function loadAndParseProcurementData() {
             region: (item['수요기관지역'] || '').trim().split(' ')[0],
             agencyType: (item['소관구분'] || '기타').trim(),
             amount: parseSignedAmount(item['공급금액']),
-            contractDate: item['기준일자'] || '',
+            date: item['기준일자'] || '',
             contractName: (item['계약명'] || '').trim(),
             product: (item['세부품명'] || '').trim(),
             supplier: (item['업체'] || '').trim(),
@@ -49,7 +45,7 @@ async function loadAndParseProcurementData() {
         .filter(item =>
             item.supplier === '두발로 주식회사' &&
             item.customer &&
-            item.contractDate &&
+            item.date &&
             item.rawAmount !== '' &&
             !Number.isNaN(item.amount)
         );

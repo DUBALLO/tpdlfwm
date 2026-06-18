@@ -1,4 +1,5 @@
 // agency-purchase.js
+console.log('%c[agency-purchase.js v=20260617a — 5년윈도우 통일(P1-3) + 그룹키 납품요구번호(P2-1)]', 'color:#0ea5e9; font-weight:bold');
 
 // 전역 변수
 let allData = [];                 // 원본 라인 데이터
@@ -96,11 +97,7 @@ async function loadAndParseData() {
         throw new Error('sheetsAPI.loadAllProcurementData 함수를 찾을 수 없습니다.');
     }
 
-    const parseSignedAmount = (value) => {
-        const cleaned = String(value ?? '').replace(/[^\d.-]/g, '');
-        if (cleaned === '' || cleaned === '-' || cleaned === '.' || cleaned === '-.') return 0;
-        return Number(cleaned) || 0;
-    };
+    const parseSignedAmount = CommonUtils.parseSignedAmount;  // 공통추출(common.js)
 
     const parseContractOrder = (item) => {
         const candidates = [
@@ -142,6 +139,7 @@ async function loadAndParseData() {
                 amount: parseSignedAmount(item['공급금액']),
                 date: (item['기준일자'] || '').trim(),
                 contractName: (item['계약명'] || '').trim(),
+                contractNo: (item['계약납품통합번호'] || '').trim(),
                 product: (item['세부품명'] || '').trim(),
                 supplier: (item['업체'] || '').trim(),
                 rawAmount: String(item['공급금액'] ?? '').trim(),
@@ -174,7 +172,7 @@ function buildContractSummary(data, includeZeroAmount = false) {
             item.agencyType,
             item.product,
             item.supplier,
-            item.contractName
+            item.contractNo || item.contractName   // 납품요구번호 우선, 결손 시 계약명 (동명 별개 납품요구 분리)
         ].join('||');
 
         if (!contractMap.has(key)) {
@@ -187,6 +185,7 @@ function buildContractSummary(data, includeZeroAmount = false) {
                 product: item.product,
                 supplier: item.supplier,
                 contractName: item.contractName,
+                contractNo: item.contractNo || '',
                 amount: 0,
                 contractDate: item.date,
                 firstContractDate: item.date,
@@ -232,6 +231,15 @@ function buildContractSummary(data, includeZeroAmount = false) {
     }
 
     return result;
+}
+
+// 5년 윈도우(기준연도 포함 직전 5년 오름차순). 순위표 '평균 대비'와 상세 '연도별 추이'가 동일 기준을 쓰도록 공통화.
+function getSelectedBaseYear() {
+    const v = document.getElementById('analysisYear')?.value || 'all';
+    return v === 'all' ? new Date().getFullYear() : parseInt(v, 10);
+}
+function getFiveYearWindow(baseYear) {
+    return Array.from({ length: 5 }, (_, i) => baseYear - i).sort();
 }
 
 function populateFilters(data) {
@@ -323,7 +331,7 @@ function renderAgencyRankPanel(data) {
 
         const info = agencyMap.get(item.agency);
         info.amount += item.amount;
-        info.contracts.add(`${item.supplier}||${item.contractName}||${item.product}`);
+        info.contracts.add(`${item.supplier}||${item.contractNo || item.contractName}||${item.product}`);
         info.suppliers.add(item.supplier);
     });
 
@@ -338,13 +346,10 @@ function renderAgencyRankPanel(data) {
         }))
         .filter(item => item.amount !== 0);
 
-    const selectedYearValue = document.getElementById('analysisYear')?.value || 'all';
-    const selectedYear = selectedYearValue === 'all'
-        ? new Date().getFullYear()
-        : parseInt(selectedYearValue, 10);
+    const selectedYear = getSelectedBaseYear();
 
     rankedAgencies.forEach(agencyItem => {
-        const years = Array.from({ length: 5 }, (_, i) => selectedYear - i).sort();
+        const years = getFiveYearWindow(selectedYear);
 
         const baseData = allData.filter(d => {
             if (d.agency !== agencyItem.agency) return false;
@@ -561,7 +566,7 @@ function renderPurchaseDetail(agencySummaryData) {
 
         const info = supplierMap.get(item.supplier);
         info.amount += item.amount;
-        info.contracts.add(`${item.contractName}||${item.product}`);
+        info.contracts.add(`${item.contractNo || item.contractName}||${item.product}`);
     });
 
     const agencyTotalAmount = agencySummaryData.reduce((sum, item) => sum + item.amount, 0);
@@ -672,19 +677,6 @@ function renderContractDetail(agencyRawData) {
     });
 }
 
-// 물품식별명 파싱: "세부품명, 업체단축명, 모델, 규격..." 구조 가정.
-// parts[0]==세부품명은 전수 검증 완료(54,581건 mismatch 0). 1/3-part는 통짜 또는 모델만.
-function parseProductIdentName(fullName) {
-    const raw = String(fullName || '').trim();
-    if (!raw) return { model: '-', spec: '-', raw: '' };
-    const parts = raw.split(',').map(s => s.trim()).filter(Boolean);
-    const n = parts.length;
-    if (n >= 4) return { model: parts[2], spec: parts.slice(3).join(', '), raw };
-    if (n === 3) return { model: parts[2], spec: '-', raw };
-    if (n === 2) return { model: '-', spec: parts[1], raw };
-    return { model: '-', spec: '-', raw }; // 통짜(수의계약 일부) — raw 표시 fallback
-}
-
 function showContractItemsPopup(summary) {
     if (!summary) return;
     const items = Array.isArray(summary.lineItems) ? summary.lineItems : [];
@@ -708,7 +700,7 @@ function showContractItemsPopup(summary) {
 
         const sorted = [...items].sort((a, b) => (b.amount || 0) - (a.amount || 0));
         sorted.forEach(line => {
-            const { model, spec, raw } = parseProductIdentName(line.fullProductName);
+            const { model, spec, raw } = CommonUtils.parseProductIdentName(line.fullProductName);
             const specCell = (spec === '-' && raw)
                 ? `<span class="text-gray-500" title="원본">${raw}</span>`
                 : spec;
@@ -745,8 +737,8 @@ function renderTrendDetail(agencyName) {
         </div>
     `;
 
-    const currentSystemYear = new Date().getFullYear();
-    const chartYears = Array.from({ length: 5 }, (_, i) => currentSystemYear - i).sort();
+    const baseYear = getSelectedBaseYear();
+    const chartYears = getFiveYearWindow(baseYear);  // 순위표와 동일 기준(선택연도)으로 통일
 
     const product = document.getElementById('productFilter')?.value || 'all';
 
@@ -858,8 +850,7 @@ function renderTrendDetail(agencyName) {
         }
     });
 
-    const selectedYearValue = document.getElementById('analysisYear')?.value || 'all';
-    const summaryYear = selectedYearValue === 'all' ? currentSystemYear : parseInt(selectedYearValue, 10);
+    const summaryYear = baseYear;  // 5년 윈도우 기준연도와 동일
 
     const yearAmounts = chartYears.map(year => salesByYear[year]);
     const actualTransactionYears = yearAmounts.filter(amount => amount > 0);
