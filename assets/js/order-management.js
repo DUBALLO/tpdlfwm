@@ -1,5 +1,5 @@
 // 주문 관리 — 데이터 로드 + 칸반 렌더링 + 새 거래 입력 폼 (Phase 3-3(B))
-console.log('%c[order-management.js v=20260618b 로드됨 — D1 모바일 송장(배차별 📤 공유)]', 'color:#10b981; font-weight:bold');
+console.log('%c[order-management.js v=20260618c 로드됨 — D1 모바일 송장(배차블록+배송카드, 아이콘 제거)]', 'color:#10b981; font-weight:bold');
 
 const ORDER_DB_BASE = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRum7_WBDKTJSA8B1ATxqpd3BtvjXnPLNQXuMpQsx0q4HVmwm_-JRQLCjy-FrYryIBPuxYkhV7F1nWq/pub';
 const ORDER_SHEET_ID = '13-TkPYeGAaXjPrVxdy_vTf83tvKxqolkK7rfgE4e-1o';
@@ -714,6 +714,7 @@ function showDealModal(dealId) {
                     <span style="display:flex; align-items:center; gap:0.5rem;">
                         <span style="font-size:0.75rem; color:#6b7280">${escapeHtml(dlv.배송일자 || '')} ${escapeHtml(dlv.배송시간 || '')}</span>
                         <button class="btn btn-warning print-invoice-btn-card" style="font-size:0.7rem; padding:0.2rem 0.5rem;" data-delivery-id="${escapeHtml(dlv.배송번호)}" title="송장 출력 (인도용/인수용 A4 1장)">송장</button>
+                        <button class="btn btn-success mobile-invoice-btn-card" style="font-size:0.7rem; padding:0.2rem 0.5rem;" data-delivery-id="${escapeHtml(dlv.배송번호)}" title="모바일 송장 — 기사 카톡 공유">모바일</button>
                         <button class="btn btn-secondary edit-delivery-btn" style="font-size:0.7rem; padding:0.2rem 0.5rem;" data-delivery-id="${escapeHtml(dlv.배송번호)}">수정</button>
                         <button class="btn btn-secondary delete-delivery-btn" style="font-size:0.7rem; padding:0.2rem 0.5rem; background:#fee2e2; color:#991b1b;" data-delivery-id="${escapeHtml(dlv.배송번호)}">삭제</button>
                     </span>
@@ -954,6 +955,13 @@ function showDealModal(dealId) {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
             window.open(`invoice-print.html?배송번호=${encodeURIComponent(btn.dataset.deliveryId)}`, '_blank');
+        });
+    });
+    // 배송 카드별 모바일 송장 버튼 (배차번호 미지정 → 1대면 바로, 여러 대면 배차 선택 모달)
+    document.querySelectorAll('.mobile-invoice-btn-card').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            shareMobileInvoice(btn.dataset.deliveryId, null);
         });
     });
 }
@@ -2105,7 +2113,27 @@ function openMobileInvoiceModal(data, batch) {
     });
 }
 
-// 배차 블록의 [📤 모바일] 버튼 핸들러 — GAS printInvoice fetch → 해당 배차 필터 → 모달
+// 배차가 여러 대일 때(배송 카드에서 호출) 어느 배차를 공유할지 고르는 모달
+function openBatchPickerModal(data, batches) {
+    const rows = batches.map(b => {
+        const addr = String(b.주소 || '').trim() || '(주소 없음)';
+        const veh = [b.배송구분, b.차종].filter(Boolean).join(' ');
+        return `<button type="button" class="batch-pick-row" data-batch="${escapeHtml(b.배차번호)}" style="display:block; width:100%; text-align:left; padding:0.6rem 0.75rem; margin-bottom:0.4rem; border:1px solid #d1d5db; border-radius:0.375rem; background:#fff; cursor:pointer;">
+            <span style="font-weight:600;">배차 ${escapeHtml(b.배차번호)}</span> <span style="color:#6b7280; font-size:0.8rem;">${escapeHtml(veh)}</span><br>
+            <span style="font-size:0.8rem; color:#4b5563;">${escapeHtml(addr)}</span>
+        </button>`;
+    }).join('');
+    CommonUtils.showModal('배차 선택', `<p style="font-size:0.85rem; color:#6b7280; margin-bottom:0.5rem;">배차(차량)가 여러 대입니다. 공유할 배차를 선택하세요.</p>${rows}`, { width: '420px' });
+    document.querySelectorAll('.batch-pick-row').forEach(row => {
+        row.addEventListener('click', () => {
+            const b = batches.find(x => String(x.배차번호) === String(row.dataset.batch));
+            if (b) openMobileInvoiceModal(data, b);  // 단일 #commonModal 교체
+        });
+    });
+}
+
+// 모바일 송장 핸들러 — GAS printInvoice fetch → 배차 모달
+// 배차번호 지정(배차 블록): 그 배차 / 미지정(배송 카드): 1대면 바로, 여러 대면 선택
 async function shareMobileInvoice(deliveryNo, 배차번호) {
     let data;
     try {
@@ -2119,9 +2147,16 @@ async function shareMobileInvoice(deliveryNo, 배차번호) {
         CommonUtils.showAlert('송장 데이터 오류: ' + ((data && data.error) || '알 수 없음'), 'error');
         return;
     }
-    const batch = (data.배차들 || []).find(b => String(b.배차번호) === String(배차번호));
-    if (!batch) { CommonUtils.showAlert(`배차 ${배차번호}번을 찾을 수 없습니다.`, 'error'); return; }
-    openMobileInvoiceModal(data, batch);
+    const batches = data.배차들 || [];
+    if (배차번호 != null && String(배차번호) !== '') {
+        const batch = batches.find(b => String(b.배차번호) === String(배차번호));
+        if (!batch) { CommonUtils.showAlert(`배차 ${배차번호}번을 찾을 수 없습니다.`, 'error'); return; }
+        openMobileInvoiceModal(data, batch);
+        return;
+    }
+    if (batches.length === 0) { CommonUtils.showAlert('배차 정보가 없습니다.', 'error'); return; }
+    if (batches.length === 1) { openMobileInvoiceModal(data, batches[0]); return; }
+    openBatchPickerModal(data, batches);
 }
 
 // ===== 배차 블록 동적 추가 =====
@@ -2191,7 +2226,7 @@ function addDispatchBlock(prepopulate = null, meta = null) {
     const canPrint = !!(meta && meta.배송번호);
     const printBtn = canPrint
         ? `<button type="button" class="btn btn-warning print-invoice-btn" style="font-size:0.75rem; padding:0.25rem 0.5rem;" data-delivery-id="${escapeHtml(meta.배송번호)}" data-dispatch-no="${idx}" title="이 배차(차량)의 송장 출력">송장 출력</button>`
-          + `<button type="button" class="btn btn-success mobile-invoice-btn" style="font-size:0.75rem; padding:0.25rem 0.5rem;" data-delivery-id="${escapeHtml(meta.배송번호)}" data-dispatch-no="${idx}" title="기사에게 보낼 모바일 송장(주소·전화 자동 링크) — 카톡 공유">📤 모바일</button>`
+          + `<button type="button" class="btn btn-success mobile-invoice-btn" style="font-size:0.75rem; padding:0.25rem 0.5rem;" data-delivery-id="${escapeHtml(meta.배송번호)}" data-dispatch-no="${idx}" title="기사에게 보낼 모바일 송장(주소·전화 자동 링크) — 카톡 공유">모바일</button>`
         : `<button type="button" class="btn btn-secondary print-invoice-btn" style="font-size:0.75rem; padding:0.25rem 0.5rem;" disabled title="저장 후 사용 가능">송장 출력</button>`;
 
     block.innerHTML = `
