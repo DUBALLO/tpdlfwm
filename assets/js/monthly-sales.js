@@ -1,5 +1,5 @@
 // 월별매출 현황 JavaScript (날짜 처리 오류 수정 최종본)
-console.log('%c[monthly-sales.js v=20260619b — 매출추이 인쇄 버튼 + 관급분석 연결]', 'color:#0ea5e9; font-weight:bold');
+console.log('%c[monthly-sales.js v=20260619c — 사급분석 탭 추가 + 인쇄 빈페이지 수정]', 'color:#0ea5e9; font-weight:bold');
 
 // 전역 변수
 let salesData = [];
@@ -101,6 +101,8 @@ async function loadSalesData() {
         populateTrendControls();
         const tt = document.getElementById('trendTab');
         if (tt && !tt.classList.contains('hidden')) renderSalesTrend();
+        const pt = document.getElementById('privTab');
+        if (pt && !pt.classList.contains('hidden')) { populatePrivControls(); privInited = true; analyzePriv(); }
         return true;
     } catch (error) {
         console.error('CSV 로드 실패:', error);
@@ -596,10 +598,106 @@ function printTrendView() {
     area.innerHTML = '';
 }
 
+// ===== 사급분석 탭 (A소스 사급매출 — 품목 비율카드: 야자/방초/가로수/기타) =====
+let privBucket = 'all';
+let privInited = false;
+const PRIV_PRODUCTS = ['야자매트', '방초매트', '가로수매트'];
+
+function privRevenueRecords() {
+    return salesData.filter(d => d.type === '사급매출');
+}
+function matchesPrivProduct(category, bucket) {
+    if (bucket === 'all') return true;
+    if (bucket === '기타') return !PRIV_PRODUCTS.includes(category);
+    return category === bucket;
+}
+function populatePrivControls() {
+    const sel = document.getElementById('privYear');
+    if (!sel) return;
+    const years = [...new Set(privRevenueRecords().map(d => d.date.getFullYear()))].sort((a, b) => b - a);
+    sel.innerHTML = '<option value="all">전체</option>';
+    years.forEach(y => sel.add(new Option(`${y}년`, y)));
+    sel.value = 'all';
+}
+function analyzePriv() {
+    if (!salesData.length) return;
+    const year = document.getElementById('privYear').value;
+    const yearRecs = privRevenueRecords().filter(d => year === 'all' || String(d.date.getFullYear()) === String(year));
+    const filtered = yearRecs.filter(d => matchesPrivProduct(d.category, privBucket));
+    document.getElementById('privCustomers').textContent = CommonUtils.formatNumber(new Set(filtered.map(d => d.customer)).size) + '곳';
+    document.getElementById('privContracts').textContent = CommonUtils.formatNumber(new Set(filtered.map(d => d.orderNo || d.customer)).size) + '건';
+    document.getElementById('privSales').textContent = (filtered.reduce((s, d) => s + d.amount, 0) / 1e8).toFixed(1) + '억원';
+    renderPrivRatioCards(yearRecs);   // 비율 기준 = 버킷 제외(연도만)
+    renderPrivCustomerTable(filtered);
+}
+function renderPrivRatioCards(baseRecs) {
+    const el = document.getElementById('privRatioCards');
+    if (!el) return;
+    const sums = {}; let total = 0;
+    baseRecs.forEach(d => {
+        const b = PRIV_PRODUCTS.includes(d.category) ? d.category : '기타';
+        sums[b] = (sums[b] || 0) + d.amount; total += d.amount;
+    });
+    const pct = n => total > 0 ? (n / total * 100).toFixed(1) + '%' : '0.0%';
+    el.innerHTML = [...PRIV_PRODUCTS, '기타'].map(b => `
+        <div class="bg-white rounded-lg shadow-md p-4 cursor-pointer priv-ratio-card${privBucket === b ? ' ring-2 ring-blue-500' : ''}" data-bucket="${b}">
+            <p class="text-sm font-medium text-gray-600">${b} 비율</p>
+            <p class="text-xl font-bold text-gray-900">${pct(sums[b] || 0)}</p>
+            <p class="text-xs text-gray-500 mt-1">${CommonUtils.formatCurrency(sums[b] || 0)}</p>
+        </div>`).join('');
+    el.querySelectorAll('.priv-ratio-card').forEach(c => c.addEventListener('click', () => {
+        privBucket = (privBucket === c.dataset.bucket) ? 'all' : c.dataset.bucket;   // 재클릭 해제
+        analyzePriv();
+    }));
+}
+function renderPrivCustomerTable(recs) {
+    const tbody = document.getElementById('privTableBody');
+    if (!tbody) return;
+    const map = new Map();
+    recs.forEach(d => {
+        if (!map.has(d.customer)) map.set(d.customer, { orders: new Set(), amount: 0 });
+        const i = map.get(d.customer); i.orders.add(d.orderNo || ''); i.amount += d.amount;
+    });
+    let rows = [...map.entries()].map(([customer, { orders, amount }]) => ({ customer, count: orders.size, amount })).filter(r => r.amount !== 0);
+    const total = rows.reduce((s, r) => s + r.amount, 0);
+    rows = rows.map(r => ({ ...r, share: total > 0 ? r.amount / total * 100 : 0 }));
+    rows.sort((a, b) => b.amount - a.amount);
+    rows.forEach((r, i) => r.rank = i + 1);
+    tbody.innerHTML = rows.length ? rows.map(r => `
+        <tr>
+            <td class="px-4 py-3 text-center">${r.rank}</td>
+            <td class="px-4 py-3">${r.customer}</td>
+            <td class="px-4 py-3 text-center">${CommonUtils.formatNumber(r.count)}</td>
+            <td class="px-4 py-3 text-right font-medium">${CommonUtils.formatCurrency(r.amount)}</td>
+            <td class="px-4 py-3 text-right">${r.share.toFixed(1)}%</td>
+        </tr>`).join('') : '<tr><td colspan="5" class="text-center py-8 text-gray-500">데이터가 없습니다.</td></tr>';
+}
+function buildPrivTitle() {
+    const year = document.getElementById('privYear').value;
+    const parts = [privBucket === 'all' ? '전체 품목' : privBucket, year === 'all' ? '전체 기간' : `${year}년`];
+    return `사급매출 현황 — ${parts.join(' · ')}`;
+}
+function printPrivView() {
+    const area = document.getElementById('printArea');
+    if (!area) return;
+    const kpi = `<div style="display:flex; gap:28px; margin:6px 0 14px; font-size:13px;">
+        <div>총 고객 수 <b>${document.getElementById('privCustomers').textContent}</b></div>
+        <div>총 계약 건수 <b>${document.getElementById('privContracts').textContent}</b></div>
+        <div>총 거래액 <b>${document.getElementById('privSales').textContent}</b></div></div>`;
+    const table = document.getElementById('privTable');
+    area.innerHTML = `<h2 style="font-size:18px; font-weight:700; margin-bottom:2px;">${buildPrivTitle()}</h2>${kpi}${table ? table.outerHTML : ''}`;
+    area.classList.remove('hidden');
+    document.body.classList.add('printing');
+    window.print();
+    document.body.classList.remove('printing');
+    area.classList.add('hidden');
+    area.innerHTML = '';
+}
+
 function setupSalesTabs() {
     const nav = document.getElementById('salesTabs');
     if (!nav) return;
-    const panels = ['aggTab', 'trendTab', 'govTab'];
+    const panels = ['aggTab', 'trendTab', 'govTab', 'privTab'];
     nav.addEventListener('click', e => {
         const btn = e.target.closest('button[data-tab]');
         if (!btn) return;
@@ -615,7 +713,11 @@ function setupSalesTabs() {
             if (el) el.classList.toggle('hidden', id !== btn.dataset.tab);
         });
         if (btn.dataset.tab === 'trendTab') renderSalesTrend();
-        else if (btn.dataset.tab === 'govTab' && window.initGovTab) window.initGovTab();   // 관급분석 지연로드
+        else if (btn.dataset.tab === 'govTab' && window.initGovTab) window.initGovTab();   // 관급분석 지연로드(B소스)
+        else if (btn.dataset.tab === 'privTab') {                                          // 사급분석(A소스 — 이미 로드됨)
+            if (!privInited && salesData.length) { populatePrivControls(); privInited = true; }
+            analyzePriv();
+        }
     });
 }
 
@@ -654,6 +756,14 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     const trendPrintBtn = document.getElementById('trendPrintBtn');
     if (trendPrintBtn) trendPrintBtn.addEventListener('click', printTrendView);
+
+    // 사급분석 바인딩
+    const privYear = document.getElementById('privYear');
+    if (privYear) privYear.addEventListener('change', analyzePriv);
+    const privPrintBtn = document.getElementById('privPrintBtn');
+    if (privPrintBtn) privPrintBtn.addEventListener('click', printPrivView);
+    const privExportBtn = document.getElementById('privExportBtn');
+    if (privExportBtn) privExportBtn.addEventListener('click', () => CommonUtils.exportTableToCSV(document.getElementById('privTable'), '사급매출.csv'));
 
     let attempts = 0;
     const interval = setInterval(() => {
