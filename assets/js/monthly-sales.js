@@ -1,5 +1,5 @@
 // 월별매출 현황 JavaScript (날짜 처리 오류 수정 최종본)
-console.log('%c[monthly-sales.js v=20260619a — 관급분석 탭(지연로드) 연결]', 'color:#0ea5e9; font-weight:bold');
+console.log('%c[monthly-sales.js v=20260619b — 매출추이 인쇄 버튼 + 관급분석 연결]', 'color:#0ea5e9; font-weight:bold');
 
 // 전역 변수
 let salesData = [];
@@ -566,6 +566,36 @@ function renderTrendTable(baseLabel, baseArr, compLabel, compArr) {
         </table>`;
 }
 
+// 매출 추이 인쇄: 제목 + 차트(이미지) + 요약표 → #printArea 한 컨테이너만 출력(겹침 방지)
+function buildTrendTitle() {
+    const baseSel = document.getElementById('trendBaseYear');
+    const baseLabel = baseSel.value === 'all_avg' ? '전체 평균' : `${baseSel.value}년`;
+    const compYear = document.getElementById('trendCompYear').value;
+    const nature = document.getElementById('trendNature').value;
+    const product = document.getElementById('trendProduct').value;
+    const natureLabel = nature === 'all' ? '전체' : nature;
+    const productLabel = product === 'all' ? '전체 품목' : product;
+    return `매출 추이 — ${baseLabel} vs ${compYear}년 · ${natureLabel} · ${productLabel}`;
+}
+
+function printTrendView() {
+    const area = document.getElementById('printArea');
+    if (!area) return;
+    let chartImg = '';
+    try {
+        const canvas = document.getElementById('salesTrendChart');
+        if (canvas) chartImg = `<img src="${canvas.toDataURL('image/png')}" style="width:100%; margin:12px 0;">`;
+    } catch (e) { /* 캔버스 변환 실패 시 그래프 생략 */ }
+    const tableEl = document.getElementById('trendDataTable');
+    area.innerHTML = `<h2 style="font-size:18px; font-weight:700; margin-bottom:2px;">${buildTrendTitle()}</h2>${chartImg}${tableEl ? tableEl.innerHTML : ''}`;
+    area.classList.remove('hidden');
+    document.body.classList.add('printing');
+    window.print();
+    document.body.classList.remove('printing');
+    area.classList.add('hidden');
+    area.innerHTML = '';
+}
+
 function setupSalesTabs() {
     const nav = document.getElementById('salesTabs');
     if (!nav) return;
@@ -622,6 +652,8 @@ document.addEventListener('DOMContentLoaded', function() {
         const el = document.getElementById(id);
         if (el) el.addEventListener('change', refreshTrendTableOnly);   // 표만 갱신(차트 불변)
     });
+    const trendPrintBtn = document.getElementById('trendPrintBtn');
+    if (trendPrintBtn) trendPrintBtn.addEventListener('click', printTrendView);
 
     let attempts = 0;
     const interval = setInterval(() => {

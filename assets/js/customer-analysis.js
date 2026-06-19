@@ -1,5 +1,5 @@
 // customer-analysis.js
-console.log('%c[customer-analysis.js v=20260619a — 매출분석 [관급분석] 탭 모듈(지연로드+비율카드+버킷필터)]', 'color:#0ea5e9; font-weight:bold');
+console.log('%c[customer-analysis.js v=20260619c — 관급분석 인쇄(제목+KPI+리스트, 전용영역)]', 'color:#0ea5e9; font-weight:bold');
 
 // 전역 변수
 let allGovernmentData = [];        // 원본 라인 데이터
@@ -9,11 +9,13 @@ let currentDetailCustomer = null;  // 현재 상세 보기 중인 고객 이름
 let govBucket = 'all';             // 비율카드 소관 버킷: all | 국가기관 | 지방정부 | 기타기관
 let govInited = false;             // 이벤트 바인딩 1회
 let govLoaded = false;             // B소스 데이터 로드 완료(세션 1회)
+let govLoadingInFlight = false;    // 로딩 중 재클릭 시 중복 fetch 방지
 
 let sortStates = {
     customer: { key: 'amount', direction: 'desc', type: 'number' },
     region: { key: 'amount', direction: 'desc', type: 'number' },
-    type: { key: 'amount', direction: 'desc', type: 'number' },
+    type: { key: 'amount', direction: 'desc', type: 'number' },      // 레거시 스탠드얼론(소관기관별)
+    product: { key: 'amount', direction: 'desc', type: 'number' },   // 품목별 분석
     detail: { key: 'contractDate', direction: 'desc', type: 'string' }
 };
 
@@ -25,6 +27,8 @@ async function initGovTab() {
 }
 
 async function loadGovData() {
+    if (govLoadingInFlight) return;   // 느린 조달청 로드 중 재클릭 → 중복 fetch 방지
+    govLoadingInFlight = true;
     showGovLoading(true);
     try {
         allGovernmentData = await loadAndParseProcurementData();
@@ -35,6 +39,7 @@ async function loadGovData() {
         console.error("관급분석 초기화 실패:", error);
         CommonUtils.showAlert("관급분석 데이터 로딩 중 오류: " + error.message, 'error');
     } finally {
+        govLoadingInFlight = false;
         showGovLoading(false);
     }
 }
@@ -186,11 +191,11 @@ function populateFilters(data) {
 }
 
 function setupEventListeners() {
-    document.getElementById('analyzeBtn').addEventListener('click', analyzeCustomers);
-    document.getElementById('govRefreshBtn')?.addEventListener('click', refreshGovData);
+    document.getElementById('analyzeBtn')?.addEventListener('click', analyzeCustomers);
+    document.getElementById('govPrintBtn')?.addEventListener('click', printGovView);
 
-    const tabs = ['customer', 'region', 'type'];
-    tabs.forEach(tab => {
+    // type = 레거시 스탠드얼론(소관기관별), product = 매출분석 탭(품목별). 없는 건 ?. 가드로 skip
+    ['customer', 'region', 'type', 'product'].forEach(tab => {
         document.getElementById(`${tab}Tab`)?.addEventListener('click', () => showTab(tab));
 
         const exportBtn = document.getElementById(`export${capitalize(tab)}Btn`);
@@ -198,18 +203,12 @@ function setupEventListeners() {
         if (exportBtn && table) {
             exportBtn.addEventListener('click', () => CommonUtils.exportTableToCSV(table, `관급매출_${tab}.csv`));
         }
+        document.getElementById(`print${capitalize(tab)}Btn`)?.addEventListener('click', printCurrentView);
 
-        const printBtn = document.getElementById(`print${capitalize(tab)}Btn`);
-        if (printBtn) printBtn.addEventListener('click', printCurrentView);
-    });
-
-    ['customer', 'region', 'type'].forEach(tableName => {
-        const table = document.getElementById(`${tableName}Table`);
-        table?.querySelector('thead').addEventListener('click', (e) => {
+        const thead = table && table.querySelector('thead');
+        if (thead) thead.addEventListener('click', (e) => {
             const th = e.target.closest('th');
-            if (th && th.dataset.sortKey) {
-                handleTableSort(tableName, th.dataset.sortKey, th.dataset.sortType);
-            }
+            if (th && th.dataset.sortKey) handleTableSort(tab, th.dataset.sortKey, th.dataset.sortType);
         });
     });
 }
@@ -235,6 +234,7 @@ function handleTableSort(tableName, sortKey, sortType = 'string') {
     if (tableName === 'customer') renderCustomerTable(currentFilteredData);
     else if (tableName === 'region') renderRegionTable(currentFilteredData);
     else if (tableName === 'type') renderTypeTable(currentFilteredData);
+    else if (tableName === 'product') renderProductTable(currentFilteredData);
     else if (tableName === 'detail') renderDetailTable();
 }
 
@@ -264,7 +264,8 @@ async function analyzeCustomers() {
     renderGovRatioCards();
     renderCustomerTable(currentFilteredData);
     renderRegionTable(currentFilteredData);
-    renderTypeTable(currentFilteredData);
+    renderTypeTable(currentFilteredData);       // 레거시 스탠드얼론(소관기관별) — 매출분석엔 표 없어 guard로 skip
+    renderProductTable(currentFilteredData);    // 품목별 분석
 }
 
 // 소관 버킷 분류 (카르텔 워치 companies.js 패턴): 원본에 '국가기관'/'지방정부' 존재, 나머지=기타기관
@@ -297,9 +298,9 @@ function renderGovRatioCards() {
     });
     const pct = n => total > 0 ? (n / total * 100).toFixed(1) + '%' : '0.0%';
     const card = (bucket, val) => `
-        <div class="bg-white rounded-lg shadow-md p-6 cursor-pointer gov-ratio-card${govBucket === bucket ? ' ring-2 ring-blue-500' : ''}" data-bucket="${bucket}">
+        <div class="bg-white rounded-lg shadow-md p-4 cursor-pointer gov-ratio-card${govBucket === bucket ? ' ring-2 ring-blue-500' : ''}" data-bucket="${bucket}">
             <p class="text-sm font-medium text-gray-600">${bucket} 비율</p>
-            <p class="text-2xl font-bold text-gray-900">${pct(val)}</p>
+            <p class="text-xl font-bold text-gray-900">${pct(val)}</p>
             <p class="text-xs text-gray-500 mt-1">${CommonUtils.formatCurrency(val)}</p>
         </div>`;
     el.innerHTML = card('국가기관', nat) + card('지방정부', loc) + card('기타기관', oth);
@@ -317,7 +318,7 @@ function updateSummaryStats(data) {
 
     document.getElementById('totalCustomers').textContent = CommonUtils.formatNumber(totalCustomers) + '곳';
     document.getElementById('totalContracts').textContent = CommonUtils.formatNumber(totalContracts) + '건';
-    document.getElementById('totalSales').textContent = CommonUtils.formatCurrency(totalSales);
+    document.getElementById('totalSales').textContent = (totalSales / 1e8).toFixed(1) + '억원';   // 억원(소수1)
 }
 
 function sortData(data, sortState) {
@@ -456,6 +457,7 @@ function renderRegionTable(data) {
 }
 
 function renderTypeTable(data) {
+    if (!document.getElementById('typeTableBody')) return;   // 매출분석 탭엔 소관기관별 표 없음(레거시 스탠드얼론 전용)
     const typeMap = new Map();
 
     data.forEach(item => {
@@ -506,6 +508,49 @@ function renderTypeTable(data) {
     });
 
     updateSortIndicators('typeTable', sortStates.type);
+}
+
+// 품목별 분석 — currentFilteredData를 품목(세부품명)으로 그룹(기존 필터 그대로 적용; 품목=전체면 전 품목)
+function renderProductTable(data) {
+    const tbody = document.getElementById('productTableBody');
+    if (!tbody) return;   // 매출분석 탭 전용(스탠드얼론엔 없음)
+    data = data || currentFilteredData;
+
+    const map = new Map();
+    data.forEach(item => {
+        const key = item.product || '(미분류)';
+        if (!map.has(key)) map.set(key, { customers: new Set(), contracts: [], amount: 0 });
+        const info = map.get(key);
+        info.customers.add(item.customer);
+        info.contracts.push(item);
+        info.amount += item.amount;
+    });
+
+    let rows = Array.from(map.entries())
+        .map(([product, { customers, contracts, amount }]) => ({ product, customerCount: customers.size, contractCount: contracts.length, amount }))
+        .filter(i => i.amount !== 0);
+    const total = rows.reduce((s, i) => s + i.amount, 0);
+    rows = rows.map(i => ({ ...i, share: total > 0 ? (i.amount / total) * 100 : 0 }));
+    sortData(rows, sortStates.product);
+    rows.forEach((i, idx) => i.rank = idx + 1);
+
+    tbody.innerHTML = '';
+    if (rows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center py-8 text-gray-500">데이터가 없습니다.</td></tr>';
+        updateSortIndicators('productTable', sortStates.product);
+        return;
+    }
+    rows.forEach(i => {
+        const r = tbody.insertRow();
+        r.innerHTML = `
+            <td class="px-4 py-3 text-center">${i.rank}</td>
+            <td class="px-4 py-3">${i.product}</td>
+            <td class="px-4 py-3 text-center">${CommonUtils.formatNumber(i.customerCount)}</td>
+            <td class="px-4 py-3 text-center">${CommonUtils.formatNumber(i.contractCount)}</td>
+            <td class="px-4 py-3 text-right font-medium">${CommonUtils.formatCurrency(i.amount)}</td>
+            <td class="px-4 py-3 text-right">${i.share.toFixed(1)}%</td>`;
+    });
+    updateSortIndicators('productTable', sortStates.product);
 }
 
 function showCustomerDetail(customerName) {
@@ -660,6 +705,40 @@ function printCurrentView() {
     } else {
         CommonUtils.showAlert('인쇄할 내용이 없습니다.', 'warning');
     }
+}
+
+// 매출 분석 [관급분석] 인쇄: 제목 + KPI 3 + 현재 탭 리스트 → #printArea 한 컨테이너만 출력(겹침 방지)
+function buildGovTitle() {
+    const year = document.getElementById('analysisYear').value;
+    const product = document.getElementById('productType').value;
+    const region = document.getElementById('regionFilter').value;
+    const parts = [];
+    parts.push(govBucket === 'all' ? '전체 소관' : govBucket);
+    parts.push(year === 'all' ? '전체 기간' : `${year}년`);
+    parts.push(product === 'all' ? '전체 품목' : product);
+    if (region !== 'all') parts.push(region);
+    return `관급매출 현황 — ${parts.join(' · ')}`;
+}
+
+function printGovView() {
+    const area = document.getElementById('printArea');
+    if (!area) return;
+    const kpi = `
+        <div style="display:flex; gap:28px; margin:6px 0 14px; font-size:13px;">
+            <div>총 고객 수 <b>${document.getElementById('totalCustomers').textContent}</b></div>
+            <div>총 계약 건수 <b>${document.getElementById('totalContracts').textContent}</b></div>
+            <div>총 거래액 <b>${document.getElementById('totalSales').textContent}</b></div>
+        </div>`;
+    const activePanel = document.querySelector('#analysisPanel .tab-panel:not(.hidden)');
+    const table = activePanel ? activePanel.querySelector('table') : null;
+    const tableHtml = table ? table.outerHTML : '<p>표가 없습니다.</p>';
+    area.innerHTML = `<h2 style="font-size:18px; font-weight:700; margin-bottom:2px;">${buildGovTitle()}</h2>${kpi}${tableHtml}`;
+    area.classList.remove('hidden');
+    document.body.classList.add('printing');
+    window.print();
+    document.body.classList.remove('printing');
+    area.classList.add('hidden');
+    area.innerHTML = '';
 }
 
 function capitalize(s) {

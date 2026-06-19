@@ -94,6 +94,11 @@
         #detailSection {
             break-before: page;
         }
+
+        /* 매출 분석 탭(관급분석/매출추이) 전용 인쇄 — #printArea 한 컨테이너만 출력(겹침 방지) */
+        body.printing * { visibility: hidden !important; }
+        body.printing #printArea, body.printing #printArea * { visibility: visible !important; }
+        body.printing #printArea { position: absolute !important; left: 0; top: 0; width: 100%; display: block !important; }
         
         /* --- 인쇄 전용 스타일 끝 --- */
     }
@@ -264,7 +269,7 @@
 
         <div id="trendTab" class="hidden">
             <div class="bg-white rounded-lg shadow-md p-6 mb-8">
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 no-print">
+                <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4 no-print">
                     <div>
                         <label class="form-label">기준연도</label>
                         <select id="trendBaseYear" class="form-select"></select>
@@ -285,6 +290,7 @@
                         <label class="form-label">품목</label>
                         <select id="trendProduct" class="form-select"></select>
                     </div>
+                    <div class="flex items-end"><button id="trendPrintBtn" class="btn btn-secondary w-full">인쇄</button></div>
                 </div>
                 <div class="h-80 relative">
                     <canvas id="salesTrendChart"></canvas>
@@ -327,8 +333,8 @@
                     <div>
                         <label class="form-label">품목</label>
                         <select id="productType" class="form-select">
-                            <option value="all">전체</option>
-                            <option value="보행매트" selected>보행매트</option><option value="식생매트">식생매트</option><option value="논슬립">논슬립</option>
+                            <option value="all" selected>전체</option>
+                            <option value="보행매트">보행매트</option><option value="식생매트">식생매트</option><option value="논슬립">논슬립</option>
                         </select>
                     </div>
                     <div>
@@ -336,23 +342,22 @@
                         <select id="regionFilter" class="form-select"><option value="all">전체</option></select>
                     </div>
                     <div class="flex items-end"><button id="analyzeBtn" class="btn btn-success w-full">분석</button></div>
-                    <div class="flex items-end"><button id="govRefreshBtn" class="btn btn-secondary w-full">새로고침</button></div>
+                    <div class="flex items-end"><button id="govPrintBtn" class="btn btn-secondary w-full">인쇄</button></div>
                 </div>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6 stats-grid">
-                <div class="bg-white rounded-lg shadow-md p-6"><p class="text-sm font-medium text-gray-600">총 고객 수</p><p class="text-2xl font-bold text-gray-900" id="totalCustomers">로딩중...</p></div>
-                <div class="bg-white rounded-lg shadow-md p-6"><p class="text-sm font-medium text-gray-600">총 계약 건수</p><p class="text-2xl font-bold text-gray-900" id="totalContracts">로딩중...</p></div>
-                <div class="bg-white rounded-lg shadow-md p-6"><p class="text-sm font-medium text-gray-600">총 거래액</p><p class="text-2xl font-bold text-gray-900" id="totalSales">로딩중...</p></div>
+            <div class="grid grid-cols-2 md:grid-cols-6 gap-3 mb-8 stats-grid">
+                <div class="bg-white rounded-lg shadow-md p-4"><p class="text-sm font-medium text-gray-600">총 고객 수</p><p class="text-xl font-bold text-gray-900" id="totalCustomers">로딩중...</p></div>
+                <div class="bg-white rounded-lg shadow-md p-4"><p class="text-sm font-medium text-gray-600">총 계약 건수</p><p class="text-xl font-bold text-gray-900" id="totalContracts">로딩중...</p></div>
+                <div class="bg-white rounded-lg shadow-md p-4"><p class="text-sm font-medium text-gray-600">총 거래액</p><p class="text-xl font-bold text-gray-900" id="totalSales">로딩중...</p></div>
+                <div id="govRatioCards" class="contents"></div>
             </div>
 
-            <div id="govRatioCards" class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8"></div>
-
-            <div id="analysisPanel" class="bg-white rounded-lg shadow-md mb-8 printable-area">
-                <div class="border-b border-gray-200 no-print"><nav class="-mb-px flex space-x-8 px-6"><button id="customerTab" class="analysis-tab active">고객별 순위</button><button id="regionTab" class="analysis-tab">지역별 분석</button><button id="typeTab" class="analysis-tab">소관기관별 분석</button></nav></div>
+            <div id="analysisPanel" class="bg-white rounded-lg shadow-md mb-8">
+                <div class="border-b border-gray-200 no-print"><nav class="-mb-px flex space-x-8 px-6"><button id="customerTab" class="analysis-tab active">고객별 순위</button><button id="regionTab" class="analysis-tab">지역별 분석</button><button id="productTab" class="analysis-tab">품목별 분석</button></nav></div>
 
                 <div id="customerPanel" class="tab-panel p-6">
-                    <div class="flex justify-between items-center mb-4"><h3 class="text-lg font-semibold text-gray-900">거래처별 매출 순위</h3><div class="flex space-x-2 no-print"><button id="printCustomerBtn" class="btn btn-secondary btn-sm">인쇄</button><button id="exportCustomerBtn" class="btn btn-secondary btn-sm">CSV 내보내기</button></div></div>
+                    <div class="flex justify-between items-center mb-4"><h3 class="text-lg font-semibold text-gray-900">거래처별 매출 순위</h3><div class="flex space-x-2 no-print"><button id="exportCustomerBtn" class="btn btn-secondary btn-sm">CSV 내보내기</button></div></div>
                     <div class="overflow-x-auto"><table id="customerTable" class="min-w-full divide-y divide-gray-200 data-table"><thead class="bg-gray-50"><tr>
                         <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="rank" data-sort-type="number"><span>순위</span></th>
                         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="customer" data-sort-type="string"><span>수요기관명</span></th>
@@ -365,7 +370,7 @@
                 </div>
 
                 <div id="regionPanel" class="tab-panel p-6 hidden">
-                    <div class="flex justify-between items-center mb-4"><h3 class="text-lg font-semibold text-gray-900">지역별 매출 분석</h3><div class="flex space-x-2 no-print"><button id="printRegionBtn" class="btn btn-secondary btn-sm">인쇄</button><button id="exportRegionBtn" class="btn btn-secondary btn-sm">CSV 내보내기</button></div></div>
+                    <div class="flex justify-between items-center mb-4"><h3 class="text-lg font-semibold text-gray-900">지역별 매출 분석</h3><div class="flex space-x-2 no-print"><button id="exportRegionBtn" class="btn btn-secondary btn-sm">CSV 내보내기</button></div></div>
                     <div class="overflow-x-auto"><table id="regionTable" class="min-w-full divide-y divide-gray-200 data-table"><thead class="bg-gray-50"><tr>
                         <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="rank" data-sort-type="number"><span>순위</span></th>
                         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="region" data-sort-type="string"><span>지역</span></th>
@@ -376,25 +381,26 @@
                     </tr></thead><tbody id="regionTableBody" class="bg-white divide-y divide-gray-200"></tbody></table></div>
                 </div>
 
-                <div id="typePanel" class="tab-panel p-6 hidden">
-                    <div class="flex justify-between items-center mb-4"><h3 class="text-lg font-semibold text-gray-900">소관기관별 분석</h3><div class="flex space-x-2 no-print"><button id="printTypeBtn" class="btn btn-secondary btn-sm">인쇄</button><button id="exportTypeBtn" class="btn btn-secondary btn-sm">CSV 내보내기</button></div></div>
-                    <div class="overflow-x-auto"><table id="typeTable" class="min-w-full divide-y divide-gray-200 data-table"><thead class="bg-gray-50"><tr>
+                <div id="productPanel" class="tab-panel p-6 hidden">
+                    <div class="flex justify-between items-center mb-4"><h3 class="text-lg font-semibold text-gray-900">품목별 분석</h3><div class="flex space-x-2 no-print"><button id="exportProductBtn" class="btn btn-secondary btn-sm">CSV 내보내기</button></div></div>
+                    <div class="overflow-x-auto"><table id="productTable" class="min-w-full divide-y divide-gray-200 data-table"><thead class="bg-gray-50"><tr>
                         <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="rank" data-sort-type="number"><span>순위</span></th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="agencyType" data-sort-type="string"><span>소관기관</span></th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="product" data-sort-type="string"><span>품목</span></th>
                         <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="customerCount" data-sort-type="number"><span>고객수</span></th>
                         <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="contractCount" data-sort-type="number"><span>계약건수</span></th>
                         <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="amount" data-sort-type="number"><span>매출액</span></th>
                         <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="share" data-sort-type="number"><span>비중</span></th>
-                    </tr></thead><tbody id="typeTableBody" class="bg-white divide-y divide-gray-200"></tbody></table></div>
+                    </tr></thead><tbody id="productTableBody" class="bg-white divide-y divide-gray-200"></tbody></table></div>
                 </div>
             </div>
             <div id="customerDetailPanel" class="bg-white rounded-lg shadow-md mb-8 hidden"></div>
         </div>
     </main>
 
+    <div id="printArea" class="hidden"></div>
     <script src="../assets/js/common.js"></script>
-    <script src="../assets/js/monthly-sales.js?v=20260619a"></script>
-    <script src="../assets/js/customer-analysis.js?v=20260619a"></script>
+    <script src="../assets/js/monthly-sales.js?v=20260619b"></script>
+    <script src="../assets/js/customer-analysis.js?v=20260619c"></script>
     
     <script>
         document.addEventListener('DOMContentLoaded', function() {
