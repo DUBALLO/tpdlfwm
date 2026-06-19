@@ -1,11 +1,14 @@
 // customer-analysis.js
-console.log('%c[customer-analysis.js v=20260617a — 고정핀 옵션 제거 + 인쇄 KPI/지역칼럼(P3-1·P3-2)]', 'color:#0ea5e9; font-weight:bold');
+console.log('%c[customer-analysis.js v=20260619a — 매출분석 [관급분석] 탭 모듈(지연로드+비율카드+버킷필터)]', 'color:#0ea5e9; font-weight:bold');
 
 // 전역 변수
 let allGovernmentData = [];        // 원본 라인 데이터
 let currentFilteredRawData = [];   // 현재 필터 적용된 원본 라인 데이터
 let currentFilteredData = [];      // 현재 필터 적용 + 계약 기준 집계 데이터
 let currentDetailCustomer = null;  // 현재 상세 보기 중인 고객 이름
+let govBucket = 'all';             // 비율카드 소관 버킷: all | 국가기관 | 지방정부 | 기타기관
+let govInited = false;             // 이벤트 바인딩 1회
+let govLoaded = false;             // B소스 데이터 로드 완료(세션 1회)
 
 let sortStates = {
     customer: { key: 'amount', direction: 'desc', type: 'number' },
@@ -14,17 +17,39 @@ let sortStates = {
     detail: { key: 'contractDate', direction: 'desc', type: 'string' }
 };
 
-document.addEventListener('DOMContentLoaded', async () => {
+// [관급분석] 탭 진입점 — 매출분석 페이지 탭 첫 열림(지연로드) 또는 스탠드얼론 페이지 로드 시 호출
+async function initGovTab() {
+    if (!govInited) { govInited = true; setupEventListeners(); }
+    if (govLoaded) return;
+    await loadGovData();
+}
+
+async function loadGovData() {
+    showGovLoading(true);
     try {
         allGovernmentData = await loadAndParseProcurementData();
         populateFilters(allGovernmentData);
-        setupEventListeners();
         await analyzeCustomers();
+        govLoaded = true;
     } catch (error) {
-        console.error("초기화 실패:", error);
-        alert("페이지 초기화 중 오류가 발생했습니다: " + error.message);
+        console.error("관급분석 초기화 실패:", error);
+        CommonUtils.showAlert("관급분석 데이터 로딩 중 오류: " + error.message, 'error');
+    } finally {
+        showGovLoading(false);
     }
-});
+}
+
+function refreshGovData() {
+    govLoaded = false;
+    loadGovData();   // loadAllProcurementData가 매번 fresh fetch
+}
+
+function showGovLoading(on) {
+    const el = document.getElementById('govLoading');
+    if (el) el.classList.toggle('hidden', !on);
+}
+
+window.initGovTab = initGovTab;   // monthly-sales.js(탭 전환)·스탠드얼론에서 호출
 
 async function loadAndParseProcurementData() {
     if (!window.sheetsAPI) throw new Error('sheets-api.js가 로드되지 않았습니다.');
@@ -146,16 +171,23 @@ function buildContractSummary(data, includeZeroAmount = false) {
 
 function populateFilters(data) {
     const regions = [...new Set(data.map(item => item.region).filter(Boolean))].sort();
-    const agencyTypes = [...new Set(data.map(item => item.agencyType).filter(Boolean))].sort();
     const regionFilter = document.getElementById('regionFilter');
+    if (regionFilter) {
+        regionFilter.length = 1;   // '전체'만 남기고 리셋(새로고침 시 중복 방지)
+        regions.forEach(region => regionFilter.add(new Option(region, region)));
+    }
+    // 소관구분 드롭다운은 비율카드로 대체됨 — 있으면(레거시 스탠드얼론) 채우고, 없으면 skip
     const agencyTypeFilter = document.getElementById('agencyTypeFilter');
-
-    regions.forEach(region => regionFilter.add(new Option(region, region)));
-    agencyTypes.forEach(type => agencyTypeFilter.add(new Option(type, type)));
+    if (agencyTypeFilter) {
+        agencyTypeFilter.length = 1;
+        [...new Set(data.map(item => item.agencyType).filter(Boolean))].sort()
+            .forEach(type => agencyTypeFilter.add(new Option(type, type)));
+    }
 }
 
 function setupEventListeners() {
     document.getElementById('analyzeBtn').addEventListener('click', analyzeCustomers);
+    document.getElementById('govRefreshBtn')?.addEventListener('click', refreshGovData);
 
     const tabs = ['customer', 'region', 'type'];
     tabs.forEach(tab => {
@@ -214,13 +246,12 @@ async function analyzeCustomers() {
     const year = document.getElementById('analysisYear').value;
     const product = document.getElementById('productType').value;
     const region = document.getElementById('regionFilter').value;
-    const agencyType = document.getElementById('agencyTypeFilter').value;
 
     currentFilteredRawData = allGovernmentData.filter(item =>
         (year === 'all' || (item.contractDate && item.contractDate.startsWith(year))) &&
         (product === 'all' || item.product === product) &&
         (region === 'all' || item.region === region) &&
-        (agencyType === 'all' || item.agencyType === agencyType)
+        matchesAgencyType(item.agencyType, govBucket)   // 비율카드 소관 버킷
     );
 
     currentFilteredData = buildContractSummary(currentFilteredRawData, false);
@@ -230,9 +261,53 @@ async function analyzeCustomers() {
     }
 
     updateSummaryStats(currentFilteredData);
+    renderGovRatioCards();
     renderCustomerTable(currentFilteredData);
     renderRegionTable(currentFilteredData);
     renderTypeTable(currentFilteredData);
+}
+
+// 소관 버킷 분류 (카르텔 워치 companies.js 패턴): 원본에 '국가기관'/'지방정부' 존재, 나머지=기타기관
+function matchesAgencyType(agencyType, bucket) {
+    if (bucket === 'all') return true;
+    if (bucket === '기타기관') return agencyType !== '국가기관' && agencyType !== '지방정부';
+    return agencyType === bucket;
+}
+
+// 국가/지방/기타 클릭형 비율카드 — 매출액 기준 비율, 클릭→버킷 토글→리스트(표) 필터
+function renderGovRatioCards() {
+    const el = document.getElementById('govRatioCards');
+    if (!el) return;   // 컨테이너 없으면 skip(레거시 스탠드얼론 안전)
+
+    // 비율 기준 = 버킷 제외한 현재 필터(기간/품목/지역) 전체
+    const year = document.getElementById('analysisYear').value;
+    const product = document.getElementById('productType').value;
+    const region = document.getElementById('regionFilter').value;
+    const baseRaw = allGovernmentData.filter(item =>
+        (year === 'all' || (item.contractDate && item.contractDate.startsWith(year))) &&
+        (product === 'all' || item.product === product) &&
+        (region === 'all' || item.region === region)
+    );
+    let nat = 0, loc = 0, oth = 0, total = 0;
+    buildContractSummary(baseRaw, false).forEach(c => {
+        const a = c.amount; total += a;
+        if (c.agencyType === '국가기관') nat += a;
+        else if (c.agencyType === '지방정부') loc += a;
+        else oth += a;
+    });
+    const pct = n => total > 0 ? (n / total * 100).toFixed(1) + '%' : '0.0%';
+    const card = (bucket, val) => `
+        <div class="bg-white rounded-lg shadow-md p-6 cursor-pointer gov-ratio-card${govBucket === bucket ? ' ring-2 ring-blue-500' : ''}" data-bucket="${bucket}">
+            <p class="text-sm font-medium text-gray-600">${bucket} 비율</p>
+            <p class="text-2xl font-bold text-gray-900">${pct(val)}</p>
+            <p class="text-xs text-gray-500 mt-1">${CommonUtils.formatCurrency(val)}</p>
+        </div>`;
+    el.innerHTML = card('국가기관', nat) + card('지방정부', loc) + card('기타기관', oth);
+    el.querySelectorAll('.gov-ratio-card').forEach(c => c.addEventListener('click', () => {
+        const b = c.dataset.bucket;
+        govBucket = (govBucket === b) ? 'all' : b;   // 재클릭 해제(토글)
+        analyzeCustomers();
+    }));
 }
 
 function updateSummaryStats(data) {
@@ -444,7 +519,7 @@ function showCustomerDetail(customerName) {
                 <button id="backToListBtn" class="btn btn-secondary btn-sm">목록으로</button>
             </div>
             <div class="overflow-x-auto">
-                <table id="detailTable" class="min-w-full divide-y divide-gray-200 data-table">
+                <table id="gaDetailTable" class="min-w-full divide-y divide-gray-200 data-table">
                     <thead class="bg-gray-50">
                         <tr>
                             <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="contractDate" data-sort-type="string"><span>최종일자</span></th>
@@ -453,7 +528,7 @@ function showCustomerDetail(customerName) {
                             <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase cursor-pointer" data-sort-key="amount" data-sort-type="number"><span>최종금액</span></th>
                         </tr>
                     </thead>
-                    <tbody id="detailTableBody"></tbody>
+                    <tbody id="gaDetailTableBody"></tbody>
                 </table>
             </div>
         </div>
@@ -470,7 +545,7 @@ function showCustomerDetail(customerName) {
         document.getElementById('analysisPanel').classList.remove('hidden');
     });
 
-    document.getElementById('detailTable').querySelector('thead').addEventListener('click', (e) => {
+    document.getElementById('gaDetailTable').querySelector('thead').addEventListener('click', (e) => {
         const th = e.target.closest('th');
         if (th && th.dataset.sortKey) {
             handleTableSort('detail', th.dataset.sortKey, th.dataset.sortType);
@@ -488,12 +563,12 @@ function renderDetailTable() {
 
     sortData(detailData, sortStates.detail);
 
-    const tbody = document.getElementById('detailTableBody');
+    const tbody = document.getElementById('gaDetailTableBody');
     tbody.innerHTML = '';
 
     if (detailData.length === 0) {
         tbody.innerHTML = '<tr><td colspan="4" class="text-center py-8 text-gray-500">데이터가 없습니다.</td></tr>';
-        updateSortIndicators('detailTable', sortStates.detail);
+        updateSortIndicators('gaDetailTable', sortStates.detail);
         return;
     }
 
@@ -516,7 +591,7 @@ function renderDetailTable() {
         });
     });
 
-    updateSortIndicators('detailTable', sortStates.detail);
+    updateSortIndicators('gaDetailTable', sortStates.detail);
 }
 
 function showContractItemsPopup(summary) {

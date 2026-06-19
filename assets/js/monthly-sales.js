@@ -1,5 +1,5 @@
 // 월별매출 현황 JavaScript (날짜 처리 오류 수정 최종본)
-console.log('%c[monthly-sales.js v=20260618c — 매출 추이 표 기간(반기)·단위(월/분기/년) 드롭다운]', 'color:#0ea5e9; font-weight:bold');
+console.log('%c[monthly-sales.js v=20260619a — 관급분석 탭(지연로드) 연결]', 'color:#0ea5e9; font-weight:bold');
 
 // 전역 변수
 let salesData = [];
@@ -569,6 +569,7 @@ function renderTrendTable(baseLabel, baseArr, compLabel, compArr) {
 function setupSalesTabs() {
     const nav = document.getElementById('salesTabs');
     if (!nav) return;
+    const panels = ['aggTab', 'trendTab', 'govTab'];
     nav.addEventListener('click', e => {
         const btn = e.target.closest('button[data-tab]');
         if (!btn) return;
@@ -579,9 +580,12 @@ function setupSalesTabs() {
             b.classList.toggle('border-transparent', !on);
             b.classList.toggle('text-gray-500', !on);
         });
-        document.getElementById('aggTab').classList.toggle('hidden', btn.dataset.tab !== 'aggTab');
-        document.getElementById('trendTab').classList.toggle('hidden', btn.dataset.tab !== 'trendTab');
+        panels.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.classList.toggle('hidden', id !== btn.dataset.tab);
+        });
         if (btn.dataset.tab === 'trendTab') renderSalesTrend();
+        else if (btn.dataset.tab === 'govTab' && window.initGovTab) window.initGovTab();   // 관급분석 지연로드
     });
 }
 
