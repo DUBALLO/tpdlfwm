@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>시장 분석 - 판매실적 대시보드</title>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#10b981">
+    <link rel="apple-touch-icon" href="/icons/icon-192.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="../assets/css/common.css" rel="stylesheet">
+    <script src="../assets/js/public-data-api.js?v=20260427d"></script>
+    <script src="../assets/js/sheets-api.js?v=20260615h"></script>
+    <style>
+        /* 통합 인쇄: 활성 상위 탭만 화면에 보이므로(.hidden=display:none) 활성 탭의 .printable-area만 출력됨 */
+        @media print {
+            body * { visibility: hidden; }
+            .printable-area, .printable-area * { visibility: visible; }
+            .printable-area { position: absolute; left: 0; top: 0; width: 100%; }
+            .no-print { display: none !important; }
+            table thead { display: table-header-group; }
+            @page { size: A4 landscape; margin: 1.5cm; }
+            .data-table { font-size: 9pt; box-shadow: none; border: 1px solid #dee2e6; }
+            .data-table th, .data-table td { border: 1px solid #dee2e6; padding: 5px; color: #000 !important; background-color: #fff !important; }
+            .data-table th { background-color: #f8f9fa !important; }
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <nav class="bg-white shadow-sm border-b no-print">
+        <div class="max-w-6xl mx-auto px-4 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-4">
+                    <a href="../index.html" class="text-lg font-semibold text-gray-900">판매실적 대시보드</a>
+                    <span class="text-gray-400">|</span>
+                    <span class="text-green-600 font-medium">시장 분석</span>
+                </div>
+                <div class="flex space-x-2">
+                    <a href="../index.html" class="nav-link">홈</a>
+                    <a href="./monthly-sales.html" class="nav-link">매출 분석</a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-6xl mx-auto px-4 py-8">
+        <div class="mb-6 no-print">
+            <h1 class="text-3xl font-bold text-gray-900 mb-2">시장 분석</h1>
+            <p class="text-gray-600">조달청(B소스) 기준 시장 전체 — 수요기관 구매, 업체 판매순위, 판매 추이를 한 페이지에서 봅니다.</p>
+        </div>
+
+        <div class="border-b border-gray-200 mb-6 no-print">
+            <nav class="-mb-px flex space-x-6" id="marketTabs">
+                <button type="button" data-tab="agencyTab" class="market-tab py-3 px-1 border-b-2 border-blue-600 text-blue-600 font-medium">수요기관 분석</button>
+                <button type="button" data-tab="supplierTab" class="market-tab py-3 px-1 border-b-2 border-transparent text-gray-500 hover:text-gray-700 font-medium">업체 판매순위</button>
+                <button type="button" data-tab="trendTab" class="market-tab py-3 px-1 border-b-2 border-transparent text-gray-500 hover:text-gray-700 font-medium">트렌드 분석</button>
+            </nav>
+        </div>
+
+        <div id="marketLoading" class="hidden text-center py-16 text-gray-500">조달청 데이터를 불러오는 중입니다… 최초 1회만 다소 느릴 수 있습니다.</div>
+
+        <!-- ============ 탭 1: 수요기관 분석 ============ -->
+        <div id="agencyTab">
+            <div class="filter-section bg-white rounded-lg shadow-md p-6 mb-8 no-print">
+                <div class="grid grid-cols-1 md:grid-cols-6 gap-4">
+                    <div>
+                        <label class="form-label">분석 기간</label>
+                        <select id="analysisYear" class="form-select">
+                            <option value="all">전체</option>
+                            <option value="2026" selected>2026년</option>
+                            <option value="2025">2025년</option>
+                            <option value="2024">2024년</option>
+                            <option value="2023">2023년</option>
+                            <option value="2022">2022년</option>
+                            <option value="2021">2021년</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label">품목</label>
+                        <select id="productFilter" class="form-select">
+                            <option value="all">전체</option>
+                            <option value="보행매트" selected>보행매트</option>
+                            <option value="식생매트">식생매트</option>
+                            <option value="논슬립">논슬립</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label">지역구분 (시/도)</label>
+                        <select id="regionFilter" class="form-select"><option value="all">전체</option></select>
+                    </div>
+                    <div>
+                        <label class="form-label">지역구분 (시/군/구)</label>
+                        <select id="cityFilter" class="form-select"><option value="all">전체</option></select>
+                    </div>
+                    <div>
+                        <label class="form-label">소관구분</label>
+                        <select id="agencyTypeFilter" class="form-select"><option value="all">전체</option></select>
+                    </div>
+                    <div>
+                        <label class="form-label">수요기관명 검색</label>
+                        <input type="text" id="agencySearchFilter" class="form-select" placeholder="기관명 입력 후 'Enter'...">
+                    </div>
+                </div>
+                <div class="flex justify-end mt-4">
+                    <button id="analyzeBtn" class="btn btn-success">분석</button>
+                </div>
+            </div>
+            <div id="agencyRankPanel" class="bg-white rounded-lg shadow-md mb-8"></div>
+            <div id="agencyDetailPanel" class="bg-white rounded-lg shadow-md mb-8 hidden"></div>
+        </div>
+
+        <!-- ============ 탭 2: 업체 판매순위 ============ -->
+        <div id="supplierTab" class="hidden">
+            <div class="filter-section bg-white rounded-lg shadow-md p-6 mb-8 no-print">
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div>
+                        <label class="form-label">분석 기간</label>
+                        <select id="analysisYear" class="form-select">
+                            <option value="all">전체</option>
+                            <option value="2026" selected>2026년</option>
+                            <option value="2025">2025년</option>
+                            <option value="2024">2024년</option>
+                            <option value="2023">2023년</option>
+                            <option value="2022">2022년</option>
+                            <option value="2021">2021년</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label">품목</label>
+                        <select id="productFilter" class="form-select">
+                            <option value="all">전체</option>
+                            <option value="보행매트" selected>보행매트</option>
+                            <option value="식생매트">식생매트</option>
+                            <option value="논슬립">논슬립</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label">업체 소재지 (시/도)</label>
+                        <select id="regionFilter" class="form-select"><option value="all" selected>전체</option></select>
+                    </div>
+                    <div class="flex items-end">
+                        <button id="analyzeBtn" class="btn btn-success w-full">분석</button>
+                    </div>
+                </div>
+                <div class="flex justify-end mt-3">
+                    <button id="refreshSupplierBtn" class="btn btn-secondary btn-sm" title="조달청 MAS에서 업체 소재지·인증 정보를 다시 수집 (최대 1~2분)">업체정보 갱신</button>
+                </div>
+            </div>
+
+            <div id="summaryPanel" class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 stats-grid">
+                <div id="totalSuppliersCard" class="bg-white rounded-lg shadow-md p-6 stats-card">
+                    <p class="text-sm font-medium text-gray-600">총 업체 수</p>
+                    <p class="text-2xl font-bold text-gray-900" id="totalSuppliers">로딩중...</p>
+                </div>
+                <div id="totalContractsCard" class="bg-white rounded-lg shadow-md p-6 stats-card">
+                    <p class="text-sm font-medium text-gray-600">총 계약 건수</p>
+                    <p class="text-2xl font-bold text-gray-900" id="totalContracts">로딩중...</p>
+                </div>
+                <div id="totalSalesCard" class="bg-white rounded-lg shadow-md p-6 stats-card">
+                    <p class="text-sm font-medium text-gray-600">총 판매액</p>
+                    <p class="text-2xl font-bold text-gray-900" id="totalSales">로딩중...</p>
+                </div>
+            </div>
+
+            <div id="supplierPanel" class="bg-white rounded-lg shadow-md mb-8"></div>
+            <div id="supplierDetailPanel" class="bg-white rounded-lg shadow-md mb-8 hidden"></div>
+        </div>
+
+        <!-- ============ 탭 3: 트렌드 분석 (시장 전체) ============ -->
+        <div id="trendTab" class="hidden">
+            <div class="filter-section bg-white rounded-lg shadow-md p-6 mb-8 no-print">
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div>
+                        <label class="form-label">기준연도</label>
+                        <select id="baseYear" class="form-select"></select>
+                    </div>
+                    <div>
+                        <label class="form-label">분석연도</label>
+                        <select id="comparisonYear" class="form-select"></select>
+                    </div>
+                    <div>
+                        <label class="form-label">품목</label>
+                        <select id="productFilter" class="form-select">
+                            <option value="all" selected>전체</option>
+                            <option value="보행매트">보행매트</option>
+                            <option value="식생매트">식생매트</option>
+                            <option value="논슬립">논슬립</option>
+                        </select>
+                    </div>
+                    <div class="flex items-end">
+                        <button id="analyzeBtn" class="btn btn-success w-full">분석</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-lg shadow-md mb-8">
+                <div class="border-b border-gray-200 no-print">
+                    <nav class="-mb-px flex space-x-8 px-6" id="trendTabs">
+                        <button data-tab="monthly" class="analysis-tab active">월별 판매 추이</button>
+                        <button data-tab="regional" class="analysis-tab">지역별 판매 현황</button>
+                        <button data-tab="agencyType" class="analysis-tab">소관구분별 판매 현황</button>
+                    </nav>
+                </div>
+
+                <div id="monthlyTab" class="tab-content p-6 printable-area">
+                    <div class="flex justify-between items-center mb-4"><h3 class="text-lg font-semibold text-gray-900">월별 판매 추이</h3><button id="printMonthlyBtn" class="btn btn-secondary btn-sm no-print">인쇄</button></div>
+                    <div class="h-80 relative flex justify-center mb-6"><canvas id="monthlyChart"></canvas></div>
+                    <div id="monthlyDataTable" class="mt-6 overflow-x-auto"></div>
+                </div>
+
+                <div id="regionalTab" class="tab-content p-6 printable-area hidden">
+                    <div class="flex justify-between items-center mb-4"><h3 class="text-lg font-semibold text-gray-900">지역별 판매 현황</h3><button id="printRegionalBtn" class="btn btn-secondary btn-sm no-print">인쇄</button></div>
+                    <canvas id="regionalChart"></canvas>
+                </div>
+
+                <div id="agencyTypeTab" class="tab-content p-6 printable-area hidden">
+                    <div class="flex justify-between items-center mb-4"><h3 class="text-lg font-semibold text-gray-900">소관구분별 판매 현황</h3><button id="printAgencyTypeBtn" class="btn btn-secondary btn-sm no-print">인쇄</button></div>
+                    <canvas id="agencyTypeChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="../assets/js/common.js"></script>
+    <script src="../assets/js/market-analysis.js?v=20260619a"></script>
+</body>
+</html>
