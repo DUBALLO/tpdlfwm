@@ -127,6 +127,15 @@
             <p class="text-gray-600">월별 매출 데이터를 확인하고 금액을 클릭하여 상세 계약 내역을 조회할 수 있습니다.</p>
         </div>
 
+        <div class="border-b border-gray-200 mb-6 no-print">
+            <nav class="-mb-px flex space-x-6" id="salesTabs">
+                <button type="button" data-tab="aggTab" class="sales-tab py-3 px-1 border-b-2 border-blue-600 text-blue-600 font-medium">월별 매출 집계</button>
+                <button type="button" data-tab="trendTab" class="sales-tab py-3 px-1 border-b-2 border-transparent text-gray-500 hover:text-gray-700 font-medium">매출 추이 그래프</button>
+            </nav>
+        </div>
+
+        <div id="aggTab">
+
         <div class="bg-white rounded-lg shadow-md p-6 mb-8 no-print">
             <div class="flex flex-wrap items-end gap-4">
                 <div>
@@ -242,14 +251,25 @@
             </div>
         </div>
 
-        <div class="bg-white rounded-lg shadow-md mb-8 no-print">
-            <button id="trendToggle" type="button" class="w-full flex items-center justify-between p-6 text-left focus:outline-none">
-                <span class="text-xl font-semibold text-gray-900">📈 매출 추이 — 동년·평균 비교</span>
-                <svg id="trendChevron" class="w-5 h-5 text-gray-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
-            </button>
-            <div id="trendPanel" class="hidden px-6 pb-6">
-                <p class="text-sm text-gray-500 mb-4">세금계산서 발행 기준(실현매출). 분석연도(올해)는 현재월까지 표시. 기준연도를 특정 연도로 바꾸면 그 해와 비교됩니다.</p>
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+        <div id="detailSection" class="bg-white rounded-lg shadow-md p-6 hidden">
+            <div class="flex justify-between items-center mb-4">
+                <h2 id="detailTitle" class="text-xl font-semibold text-gray-900">상세 계약 내역</h2>
+                <button id="closeDetailBtn" class="text-gray-400 hover:text-gray-600 no-print" onclick="hideDetailSection()"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+            </div>
+            
+            <div class="overflow-x-auto">
+                <table id="detailTable" class="data-table">
+                    <thead></thead>
+                    <tbody id="detailTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        </div><!-- /aggTab -->
+
+        <div id="trendTab" class="hidden">
+            <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 no-print">
                     <div>
                         <label class="form-label">기준연도</label>
                         <select id="trendBaseYear" class="form-select"></select>
@@ -274,27 +294,31 @@
                 <div class="h-80 relative">
                     <canvas id="salesTrendChart"></canvas>
                 </div>
-                <div id="trendDataTable" class="mt-6 overflow-x-auto"></div>
-            </div>
-        </div>
-
-        <div id="detailSection" class="bg-white rounded-lg shadow-md p-6 hidden">
-            <div class="flex justify-between items-center mb-4">
-                <h2 id="detailTitle" class="text-xl font-semibold text-gray-900">상세 계약 내역</h2>
-                <button id="closeDetailBtn" class="text-gray-400 hover:text-gray-600 no-print" onclick="hideDetailSection()"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
-            </div>
-            
-            <div class="overflow-x-auto">
-                <table id="detailTable" class="data-table">
-                    <thead></thead>
-                    <tbody id="detailTableBody"></tbody>
-                </table>
+                <div class="flex flex-wrap items-end gap-3 justify-end mt-6 mb-3 no-print">
+                    <div>
+                        <label class="form-label">표 기간</label>
+                        <select id="trendRange" class="form-select">
+                            <option value="all" selected>전체</option>
+                            <option value="h1">상반기</option>
+                            <option value="h2">하반기</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label">표 단위</label>
+                        <select id="trendUnit" class="form-select">
+                            <option value="month" selected>월</option>
+                            <option value="quarter">분기</option>
+                            <option value="year">년</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="trendDataTable" class="overflow-x-auto"></div>
             </div>
         </div>
     </main>
 
     <script src="../assets/js/common.js"></script>
-    <script src="../assets/js/monthly-sales.js?v=20260618a"></script>
+    <script src="../assets/js/monthly-sales.js?v=20260618c"></script>
     
     <script>
         document.addEventListener('DOMContentLoaded', function() {

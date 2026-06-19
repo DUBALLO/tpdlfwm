@@ -94,6 +94,8 @@ API row push에서 시트와 동일한 한글 컬럼명으로 통일.
 
 ## UI 패턴
 
+**아이콘·이모지 금지** (형우 지시 2026-06-18): 버튼·제목·탭 등 모든 UI에 아이콘/이모지(📈, 🖼️, SVG 장식 등)를 넣지 말 것. 텍스트 라벨만 사용. 기존 코드의 장식 아이콘도 해당 부분을 새로 수정할 때 함께 제거.
+
 ### 모달(팝업)
 - 헬퍼: `CommonUtils.showModal(title, html, {width: '900px'})`
 - 정의: `assets/js/common.js:58`, CSS: `assets/css/common.css:94`
