@@ -1,5 +1,5 @@
 // 주문 관리 — 데이터 로드 + 칸반 렌더링 + 새 거래 입력 폼 (Phase 3-3(B))
-console.log('%c[order-management.js v=20260618c 로드됨 — D1 모바일 송장(배차블록+배송카드, 아이콘 제거)]', 'color:#10b981; font-weight:bold');
+console.log('%c[order-management.js v=20260619a 로드됨 — 납품확인서 내역=주문수량·최종일자 전량 기준]', 'color:#10b981; font-weight:bold');
 
 const ORDER_DB_BASE = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRum7_WBDKTJSA8B1ATxqpd3BtvjXnPLNQXuMpQsx0q4HVmwm_-JRQLCjy-FrYryIBPuxYkhV7F1nWq/pub';
 const ORDER_SHEET_ID = '13-TkPYeGAaXjPrVxdy_vTf83tvKxqolkK7rfgE4e-1o';
@@ -3177,32 +3177,27 @@ function buildConfirmTokens(deal) {
     };
 
     // 라인별 토큰 — 공문/검수현황/납품내역 표
+    // 문서 기준(형우 지시 2026-06-19): 실제 배송 실적과 무관하게
+    //  (1) 수량 = 주문수량(주문 내역) — 배송이 1200이어도 주문 1140으로 기재
+    //  (2) 일자 = 최종 납품일자(maxDate)에 전량 — 19·21일 분할이어도 21일 전량으로 기재
+    const 납품일자_점 = formatShortDate(maxDate);
     lines.forEach((line, i) => {
-        // 이 품명에 배차된 수량 합 (전체 배차 라인에서)
-        const 배차수량합 = deliveries.flatMap(d => d.lines || [])
-            .filter(l => (l.품명 || '').trim() === (line.품명 || '').trim())
-            .reduce((s, l) => s + (Number(l.수량) || 0), 0);
-        // 이 품명의 가장 늦은 납품일자
-        const 라인배송일자 = deliveries
-            .filter(d => (d.lines || []).some(l => (l.품명 || '').trim() === (line.품명 || '').trim()))
-            .map(d => d.배송일자).filter(Boolean).sort().pop() || maxDate;
-
         const 단가 = Number(line.단가) || 0;
         const 주문수량 = Number(line.수량) || 0;
         const 금액 = 단가 * 주문수량;
 
         // 공문 표 (S0): 규격/납품일자/단가/수량/금액
         tokens[`{{공문.${i}.규격}}`] = line.품명 || '';
-        tokens[`{{공문.${i}.납품일자}}`] = formatShortDate(라인배송일자);
+        tokens[`{{공문.${i}.납품일자}}`] = 납품일자_점;
         tokens[`{{공문.${i}.단가}}`] = 단가.toLocaleString();
-        tokens[`{{공문.${i}.수량}}`] = String(배차수량합 || 주문수량);
+        tokens[`{{공문.${i}.수량}}`] = String(주문수량);
         tokens[`{{공문.${i}.금액}}`] = 금액.toLocaleString();
 
         // 검수현황 표 (S1.t0): 8컬럼
         tokens[`{{검수.${i}.규격}}`] = line.품명 || '';
         tokens[`{{검수.${i}.배점량}}`] = String(주문수량);
         tokens[`{{검수.${i}.기검수량}}`] = '';
-        tokens[`{{검수.${i}.금회검수량}}`] = String(배차수량합 || 주문수량);
+        tokens[`{{검수.${i}.금회검수량}}`] = String(주문수량);
         tokens[`{{검수.${i}.잔량}}`] = '';
         tokens[`{{검수.${i}.단가}}`] = 단가.toLocaleString();
         tokens[`{{검수.${i}.금액}}`] = 금액.toLocaleString();
@@ -3210,8 +3205,8 @@ function buildConfirmTokens(deal) {
 
         // 납품내역 표 (S1.t1): 규격/일자/수량
         tokens[`{{납품.${i}.규격}}`] = line.품명 || '';
-        tokens[`{{납품.${i}.일자}}`] = formatShortDate(라인배송일자);
-        tokens[`{{납품.${i}.수량}}`] = String(배차수량합 || 주문수량);
+        tokens[`{{납품.${i}.일자}}`] = 납품일자_점;
+        tokens[`{{납품.${i}.수량}}`] = String(주문수량);
     });
 
     // 합계 (양식 행 수가 부족하면 토큰이 양식에 없을 수 있음 — 그 경우 무시됨)
