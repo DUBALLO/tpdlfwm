@@ -1,5 +1,5 @@
 // 주문 관리 — 데이터 로드 + 칸반 렌더링 + 새 거래 입력 폼 (Phase 3-3(B))
-console.log('%c[order-management.js v=20260619a 로드됨 — 납품확인서 내역=주문수량·최종일자 전량 기준]', 'color:#10b981; font-weight:bold');
+console.log('%c[order-management.js v=20260619b 로드됨 — 주문확정 물량 표(진행 중 품명·규격별 합계)]', 'color:#10b981; font-weight:bold');
 
 const ORDER_DB_BASE = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRum7_WBDKTJSA8B1ATxqpd3BtvjXnPLNQXuMpQsx0q4HVmwm_-JRQLCjy-FrYryIBPuxYkhV7F1nWq/pub';
 const ORDER_SHEET_ID = '13-TkPYeGAaXjPrVxdy_vTf83tvKxqolkK7rfgE4e-1o';
@@ -1003,7 +1003,46 @@ async function load() {
 function render() {
     const filtered = applyFilters(joinedDeals);
     renderKanban(filtered);
+    renderOrderQtySummary(filtered);
     renderCompletedList(filtered);
+}
+
+// 주문확정 물량 — 진행 중 주문(납품완료 전)의 품명·규격별 합계 수량 (칸반↔납품완료 사이)
+function renderOrderQtySummary(deals) {
+    const wrap = document.getElementById('orderQtySummary');
+    const tbody = document.getElementById('orderQtyBody');
+    if (!wrap || !tbody) return;
+
+    const ongoing = deals.filter(d => !d.세금계산서일자);   // 납품완료(세금계산서 발행) 제외
+    const map = new Map();
+    ongoing.forEach(d => (d.lines || []).forEach(l => {
+        const 품목 = (l.품목 || '').trim();
+        const 품명 = (l.품명 || '').trim();
+        const 규격 = (l.규격 || '').trim();
+        const 단위 = (l.단위 || '').trim();
+        if (!품목 && !품명 && !규격) return;
+        const key = [품목, 품명, 규격, 단위].join('||');
+        if (!map.has(key)) map.set(key, { 품목, 품명, 규격, 단위, 수량: 0 });
+        map.get(key).수량 += Number(l.수량) || 0;
+    }));
+
+    const rows = [...map.values()].filter(r => r.수량 !== 0).sort((a, b) =>
+        (a.품목 || '').localeCompare(b.품목 || '', 'ko') ||
+        (a.품명 || '').localeCompare(b.품명 || '', 'ko') ||
+        (a.규격 || '').localeCompare(b.규격 || '', 'ko'));
+
+    if (rows.length === 0) { wrap.classList.add('hidden'); tbody.innerHTML = ''; return; }
+    wrap.classList.remove('hidden');
+
+    const dash = '<span style="color:#9ca3af">-</span>';
+    tbody.innerHTML = rows.map(r => `
+        <tr style="cursor:default;">
+            <td>${escapeHtml(r.품목) || dash}</td>
+            <td>${escapeHtml(r.품명) || dash}</td>
+            <td>${escapeHtml(r.규격) || dash}</td>
+            <td style="text-align:right; font-weight:600;">${CommonUtils.formatNumber(r.수량)} ${escapeHtml(r.단위)}</td>
+        </tr>
+    `).join('');
 }
 
 // 납품 완료 리스트 — 연도 필터 + 정렬 + 페이지
