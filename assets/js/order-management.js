@@ -1,5 +1,5 @@
 // 주문 관리 — 데이터 로드 + 칸반 렌더링 + 새 거래 입력 폼 (Phase 3-3(B))
-console.log('%c[order-management.js v=20260619b 로드됨 — 주문확정 물량 표(진행 중 품명·규격별 합계)]', 'color:#10b981; font-weight:bold');
+console.log('%c[order-management.js v=20260619c 로드됨 — 주문확정 물량 표(배송 전 주문, 품명·규격별 합계)]', 'color:#10b981; font-weight:bold');
 
 const ORDER_DB_BASE = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRum7_WBDKTJSA8B1ATxqpd3BtvjXnPLNQXuMpQsx0q4HVmwm_-JRQLCjy-FrYryIBPuxYkhV7F1nWq/pub';
 const ORDER_SHEET_ID = '13-TkPYeGAaXjPrVxdy_vTf83tvKxqolkK7rfgE4e-1o';
@@ -1007,13 +1007,14 @@ function render() {
     renderCompletedList(filtered);
 }
 
-// 주문확정 물량 — 진행 중 주문(납품완료 전)의 품명·규격별 합계 수량 (칸반↔납품완료 사이)
+// 주문확정 물량 — '주문' 단계(배송 전·납품완료 전)의 품명·규격별 합계 수량 (칸반↔납품완료 사이)
 function renderOrderQtySummary(deals) {
     const wrap = document.getElementById('orderQtySummary');
     const tbody = document.getElementById('orderQtyBody');
     if (!wrap || !tbody) return;
 
-    const ongoing = deals.filter(d => !d.세금계산서일자);   // 납품완료(세금계산서 발행) 제외
+    // computeColumnKey==='order' = 세금계산서 없음 + 배송(deliveries) 없음 → 배송으로 넘어간 건·완료 제외
+    const ongoing = deals.filter(d => computeColumnKey(d) === 'order');
     const map = new Map();
     ongoing.forEach(d => (d.lines || []).forEach(l => {
         const 품목 = (l.품목 || '').trim();
