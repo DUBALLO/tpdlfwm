@@ -57,6 +57,7 @@
                     <select id="filterProductType" class="form-select w-40">
                         <option value="보행매트">보행매트</option>
                         <option value="식생매트">식생매트</option>
+                        <option value="고정핀">고정핀</option>
                     </select>
                 </div>
                 <div>
@@ -106,7 +107,7 @@
                             품목명 (규격) <span id="sort-name" class="sort-icon"></span>
                         </th>
                         <th class="col-num px-4 py-3 cursor-pointer hover:bg-gray-100" onclick="sortTable('prod')">
-                            당월 생산 <span id="sort-prod" class="sort-icon"></span>
+                            <span id="th-prod-label">당월 생산</span> <span id="sort-prod" class="sort-icon"></span>
                         </th>
                         <th class="col-num px-4 py-3 cursor-pointer hover:bg-gray-100" onclick="sortTable('out')">
                             당월 출고 <span id="sort-out" class="sort-icon"></span>
@@ -127,7 +128,7 @@
     </main>
 
     <script src="../assets/js/common.js"></script>
-    <script src="../assets/js/inventory-management.js?v=20260702b"></script>
+    <script src="../assets/js/inventory-management.js?v=20260702c"></script>
 </body>
 
 </html>

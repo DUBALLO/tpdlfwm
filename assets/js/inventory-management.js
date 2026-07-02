@@ -1,10 +1,20 @@
 // assets/js/inventory-management.js
-console.log('%c[inventory-management.js v=20260702b — 컴팩트 표(우측정렬·0흐림·재고열강조·가로구분선 강화) + 즉시갱신 + 음수재고 경고]', 'color:#0ea5e9; font-weight:bold');
+console.log('%c[inventory-management.js v=20260702c — 고정핀(입고·개) 지원 + 컴팩트 표 + 즉시갱신 + 음수재고 경고]', 'color:#0ea5e9; font-weight:bold');
 
 let rawInventoryData = [];
 let currentInventoryData = []; // 정렬을 위한 현재 표시 데이터
 let currentSortColumn = 'name'; // 기본 정렬 컬럼
 let currentSortOrder = 'asc'; // 기본 정렬 순서
+
+// 제품별 시트 컬럼·단위·라벨 설정 — 매트=생산·m / 고정핀=입고·개 (시트 컬럼명·단위·용어가 다름)
+const PRODUCT_CONFIG = {
+    '보행매트': { specIn: '보행매트 생산 규격', qtyIn: '보행매트 생산량', specOut: '보행매트 출고 규격', qtyOut: '보행매트 출고량', dest: '보행매트 출고처', unit: 'm', inLabel: '생산' },
+    '식생매트': { specIn: '식생매트 생산 규격', qtyIn: '식생매트 생산량', specOut: '식생매트 출고 규격', qtyOut: '식생매트 출고량', dest: '식생매트 출고처', unit: 'm', inLabel: '생산' },
+    '고정핀':   { specIn: '고정핀 입고 규격', qtyIn: '고정핀 입고량', specOut: '고정핀 출고 규격', qtyOut: '고정핀 출고량', dest: '출고처', unit: '개', inLabel: '입고' }
+};
+function getProductConfig() {
+    return PRODUCT_CONFIG[document.getElementById('filterProductType').value] || PRODUCT_CONFIG['보행매트'];
+}
 
 document.addEventListener('DOMContentLoaded', async () => {
     // 1. 오늘 날짜로 드롭다운 초기 세팅
@@ -44,18 +54,23 @@ function renderInventory() {
     const selectedYear = document.getElementById('filterYear').value;
     // P2-3: 연도='전체'면 월 무시 → 세 카드 기준 기간 일치(전체 누적)
     const selectedMonth = selectedYear === 'all' ? 'all' : document.getElementById('filterMonth').value;
-    const selectedProductType = document.getElementById('filterProductType').value;
+    const cfg = getProductConfig();
 
-    updatePeriodLabels(selectedYear, selectedMonth);
+    updatePeriodLabels(selectedYear, selectedMonth, cfg);
+    // 제품별 용어(생산/입고) — 컬럼 헤더 + '생산 현황' 버튼 라벨 동적 갱신
+    const thProd = document.getElementById('th-prod-label');
+    if (thProd) thProd.textContent = `당월 ${cfg.inLabel}`;
+    const wkBtn = document.getElementById('weeklyStatusBtn');
+    if (wkBtn) wkBtn.textContent = `${cfg.inLabel} 현황`;
 
-    // 데이터 가공을 위한 맵 (품목별 생산/출고/재고 집계)
+    // 데이터 가공을 위한 맵 (품목별 생산·입고/출고/재고 집계)
     const inventoryMap = new Map();
 
-    // 선택된 제품 타입에 따른 컬럼명 설정
-    const prodSpecCol = `${selectedProductType} 생산 규격`;
-    const prodQtyCol = `${selectedProductType} 생산량`;
-    const outSpecCol = `${selectedProductType} 출고 규격`;
-    const outQtyCol = `${selectedProductType} 출고량`;
+    // 선택된 제품 타입에 따른 컬럼명 (설정표 기반 — 매트=생산, 고정핀=입고)
+    const prodSpecCol = cfg.specIn;
+    const prodQtyCol = cfg.qtyIn;
+    const outSpecCol = cfg.specOut;
+    const outQtyCol = cfg.qtyOut;
 
     // 1. 전체 데이터 스캔하여 누적 재고 및 선택 기간 활동 계산
     rawInventoryData.forEach(row => {
@@ -109,7 +124,8 @@ function renderInventory() {
 }
 
 // P2-3: 카드 라벨을 선택 기간으로 동적 갱신 (기간 기준 명확화 — '선택 시점까지 누적' 의미 반영)
-function updatePeriodLabels(selectedYear, selectedMonth) {
+function updatePeriodLabels(selectedYear, selectedMonth, cfg) {
+    const inLabel = (cfg && cfg.inLabel) || '생산';
     const period = selectedYear === 'all'
         ? '전체 기간'
         : (selectedMonth === 'all' ? `${selectedYear}년` : `${selectedYear}년 ${parseInt(selectedMonth)}월`);
@@ -117,7 +133,7 @@ function updatePeriodLabels(selectedYear, selectedMonth) {
         ? '전체 기말 재고'
         : (selectedMonth === 'all' ? `${selectedYear}년 말 재고` : `${selectedYear}년 ${parseInt(selectedMonth)}월 말 재고`);
     const set = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
-    set('prodLabel', `${period} 생산량`);
+    set('prodLabel', `${period} ${inLabel}량`);
     set('outLabel', `${period} 출고량`);
     set('stockLabel', stockText);
 }
@@ -189,11 +205,12 @@ function renderInventoryTable() {
         totalS += item.stock;
     });
 
-    // 요약 카드 업데이트
-    document.getElementById('totalProd').textContent = CommonUtils.formatNumber(totalP) + "m";
-    document.getElementById('totalOut').textContent = CommonUtils.formatNumber(totalO) + "m";
+    // 요약 카드 업데이트 (단위는 제품별 — 매트=m, 고정핀=개)
+    const unit = getProductConfig().unit;
+    document.getElementById('totalProd').textContent = CommonUtils.formatNumber(totalP) + unit;
+    document.getElementById('totalOut').textContent = CommonUtils.formatNumber(totalO) + unit;
     const stockEl = document.getElementById('totalStock');
-    stockEl.textContent = CommonUtils.formatNumber(totalS) + "m";
+    stockEl.textContent = CommonUtils.formatNumber(totalS) + unit;
     // P3-3: 음수 재고 품목이 있으면 총 재고 카드도 빨강으로 경고
     const hasNeg = currentInventoryData.some(it => it.stock < 0);
     stockEl.classList.toggle('text-red-600', hasNeg);
@@ -257,16 +274,21 @@ function checkIsBeforeOrEqual(y, m, selY, selM) {
 let allActivities = []; // 전체 활동 데이터
 let currentPage = 0; // 현재 페이지
 const itemsPerPage = 5; // 페이지당 표시할 항목 수
+let weeklyInLabel = '생산'; // 모달 용어(생산/입고) — 페이지네이션 재렌더 시 유지
+let weeklyUnit = 'm';       // 모달 수량 단위(m/개)
 
 function showWeeklyStatus() {
     const selectedProductType = document.getElementById('filterProductType').value;
-    
-    // 선택된 제품 타입에 따른 컬럼명 설정
-    const prodSpecCol = `${selectedProductType} 생산 규격`;
-    const prodQtyCol = `${selectedProductType} 생산량`;
-    const outSpecCol = `${selectedProductType} 출고 규격`;
-    const outQtyCol = `${selectedProductType} 출고량`;
-    const outDestCol = `${selectedProductType} 출고처`;
+    const cfg = getProductConfig();
+    weeklyInLabel = cfg.inLabel;
+    weeklyUnit = cfg.unit;
+
+    // 선택된 제품 타입에 따른 컬럼명 (설정표 기반 — 매트=생산, 고정핀=입고)
+    const prodSpecCol = cfg.specIn;
+    const prodQtyCol = cfg.qtyIn;
+    const outSpecCol = cfg.specOut;
+    const outQtyCol = cfg.qtyOut;
+    const outDestCol = cfg.dest;
     
     // 최근 데이터 수집 (생산 + 출고 통합)
     allActivities = [];
@@ -285,7 +307,7 @@ function showWeeklyStatus() {
                 timestamp: timestamp,
                 worker: worker,
                 product: selectedProductType,
-                type: '생산',
+                type: weeklyInLabel,
                 spec: prodSpec,
                 qty: prodQty,
                 destination: '-'
@@ -373,7 +395,7 @@ function renderWeeklyStatusModal() {
         `;
     } else {
         currentItems.forEach(item => {
-            const typeClass = item.type === '생산' ? 'text-blue-600' : 'text-red-600';
+            const typeClass = item.type === '출고' ? 'text-red-600' : 'text-blue-600';
             tableHTML += `
                 <tr>
                     <td class="px-3 py-3 text-center">${item.date}</td>
@@ -381,7 +403,7 @@ function renderWeeklyStatusModal() {
                     <td class="px-4 py-3 text-center">${item.product}</td>
                     <td class="px-4 py-3 text-center font-semibold ${typeClass}">${item.type}</td>
                     <td class="px-3 py-3 text-center">${item.spec}</td>
-                    <td class="px-4 py-3 text-center font-medium">${CommonUtils.formatNumber(item.qty)}m</td>
+                    <td class="px-4 py-3 text-center font-medium">${CommonUtils.formatNumber(item.qty)}${weeklyUnit}</td>
                     <td class="px-4 py-3 text-center">${item.destination}</td>
                 </tr>
             `;
@@ -415,7 +437,7 @@ function renderWeeklyStatusModal() {
     `;
     
     // 모달 표시
-    CommonUtils.showModal(`생산 현황`, tableHTML, { width: '1100px' });
+    CommonUtils.showModal(`${weeklyInLabel} 현황`, tableHTML, { width: '1100px' });
     
     // 페이지네이션 버튼 이벤트 연결 (showModal이 DOM을 동기 삽입하므로 즉시 바인딩 — setTimeout 경합 제거)
     const prevBtn = document.getElementById('prevPageBtn');

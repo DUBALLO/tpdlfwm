@@ -1,5 +1,5 @@
 // 주문 관리 — 데이터 로드 + 칸반 렌더링 + 새 거래 입력 폼 (Phase 3-3(B))
-console.log('%c[order-management.js v=20260702a 로드됨 — 주문확정 물량 표(재고 수량 열 추가·부족 빨강 / 품명·규격별 합계)]', 'color:#10b981; font-weight:bold');
+console.log('%c[order-management.js v=20260702b 로드됨 — 주문확정 물량 재고 수량 열(고정핀 포함·부족 빨강)]', 'color:#10b981; font-weight:bold');
 
 const ORDER_DB_BASE = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRum7_WBDKTJSA8B1ATxqpd3BtvjXnPLNQXuMpQsx0q4HVmwm_-JRQLCjy-FrYryIBPuxYkhV7F1nWq/pub';
 const ORDER_SHEET_ID = '13-TkPYeGAaXjPrVxdy_vTf83tvKxqolkK7rfgE4e-1o';
@@ -17,8 +17,13 @@ const ORDER_DB_TABS = {
 
 // 재고 시트 (생산·출고 로그 → 현재 재고). 재고 CSV publish (재고 현황 페이지와 동일 소스)
 const INVENTORY_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQkA2tLZxiYFn8w0T8WF8-ibHFWAILyq44LRkHaTtAP9E55Fvc3U6gAYeL9i_ZJjinUYmP1X3-LGHNm/pub?output=csv';
-const INVENTORY_PRODUCT_TYPES = ['보행매트', '식생매트'];
-// { 품목: Map(모델코드 → 현재재고 = 전기간 생산-출고 누적) } — 주문 품명(모델코드)과 매칭
+// 재고 시트 컬럼(제품별) — 매트=생산, 고정핀=입고. 재고 현황 페이지와 동일 스키마
+const INVENTORY_COLS = {
+    '보행매트': { specIn: '보행매트 생산 규격', qtyIn: '보행매트 생산량', specOut: '보행매트 출고 규격', qtyOut: '보행매트 출고량' },
+    '식생매트': { specIn: '식생매트 생산 규격', qtyIn: '식생매트 생산량', specOut: '식생매트 출고 규격', qtyOut: '식생매트 출고량' },
+    '고정핀':   { specIn: '고정핀 입고 규격', qtyIn: '고정핀 입고량', specOut: '고정핀 출고 규격', qtyOut: '고정핀 출고량' }
+};
+// { 품목: Map(모델코드 → 현재재고 = 전기간 (생산·입고)-출고 누적) } — 주문 품명(모델코드)과 매칭
 let inventoryStock = {};
 
 // 단가표 시트 ([DB] 견적서)
@@ -195,13 +200,13 @@ async function loadInventoryStock() {
         if (!res.ok) throw new Error(`재고 HTTP ${res.status}`);
         const rows = parseCSV(await res.text());   // [{헤더:값}]
         const map = {};
-        INVENTORY_PRODUCT_TYPES.forEach(pt => { map[pt] = new Map(); });
+        Object.keys(INVENTORY_COLS).forEach(pt => { map[pt] = new Map(); });
         rows.forEach(r => {
-            INVENTORY_PRODUCT_TYPES.forEach(pt => {
-                const ps = (r[`${pt} 생산 규격`] || '').trim();
-                const pq = parseInt(r[`${pt} 생산량`]) || 0;
-                const os = (r[`${pt} 출고 규격`] || '').trim();
-                const oq = parseInt(r[`${pt} 출고량`]) || 0;
+            Object.entries(INVENTORY_COLS).forEach(([pt, c]) => {
+                const ps = (r[c.specIn] || '').trim();
+                const pq = parseInt(r[c.qtyIn]) || 0;
+                const os = (r[c.specOut] || '').trim();
+                const oq = parseInt(r[c.qtyOut]) || 0;
                 if (ps) map[pt].set(ps, (map[pt].get(ps) || 0) + pq);
                 if (os) map[pt].set(os, (map[pt].get(os) || 0) - oq);
             });
@@ -213,11 +218,15 @@ async function loadInventoryStock() {
     }
 }
 
-// 주문 행(품목·품명=모델코드)에 해당하는 현재 재고. 매칭 없으면 null(부품 등 재고 미추적).
+// 주문 행(품목·품명=모델코드)에 해당하는 현재 재고. 매칭 없으면 null.
+// 고정핀 등 부품은 주문 품목이 매트여도 재고는 '고정핀' 시트에 있으므로 고정핀 맵으로 폴백(코드 무충돌: DB-Px vs DB-숫자).
 function lookupStock(품목, 품명) {
+    if (!품명) return null;
     const m = inventoryStock[품목];
-    if (!m || !품명) return null;
-    return m.has(품명) ? m.get(품명) : null;
+    if (m && m.has(품명)) return m.get(품명);
+    const pin = inventoryStock['고정핀'];
+    if (pin && pin.has(품명)) return pin.get(품명);
+    return null;
 }
 
 async function fetchPriceTab(gid) {
