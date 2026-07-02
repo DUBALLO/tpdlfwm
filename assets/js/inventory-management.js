@@ -1,5 +1,5 @@
 // assets/js/inventory-management.js
-console.log('%c[inventory-management.js v=20260617a — 즉시갱신 + 전체연도 월기준 일치 + 음수재고 경고]', 'color:#0ea5e9; font-weight:bold');
+console.log('%c[inventory-management.js v=20260702b — 컴팩트 표(우측정렬·0흐림·재고열강조·가로구분선 강화) + 즉시갱신 + 음수재고 경고]', 'color:#0ea5e9; font-weight:bold');
 
 let rawInventoryData = [];
 let currentInventoryData = []; // 정렬을 위한 현재 표시 데이터
@@ -176,11 +176,13 @@ function renderInventoryTable() {
         const row = tbody.insertRow();
         // P3-3: 음수 재고(이월 미반영·규격키 불일치 가능)는 빨강 경고
         const stockCls = item.stock < 0 ? 'text-red-600 bg-red-50' : 'text-blue-600 bg-blue-50';
+        // 컴팩트 표: 생산·출고 0값은 흐리게(zero) 처리
+        const zc = v => v === 0 ? ' zero' : '';
         row.innerHTML = `
-            <td class="px-4 py-3 font-medium text-gray-900 text-center">${item.name}</td>
-            <td class="px-4 py-3 text-center">${CommonUtils.formatNumber(item.prodInPeriod)}</td>
-            <td class="px-4 py-3 text-center">${CommonUtils.formatNumber(item.outInPeriod)}</td>
-            <td class="px-4 py-3 text-center font-bold ${stockCls}">${CommonUtils.formatNumber(item.stock)}</td>
+            <td class="col-name px-4 py-3 font-medium text-gray-900">${item.name}</td>
+            <td class="col-num px-4 py-3${zc(item.prodInPeriod)}">${CommonUtils.formatNumber(item.prodInPeriod)}</td>
+            <td class="col-num px-4 py-3${zc(item.outInPeriod)}">${CommonUtils.formatNumber(item.outInPeriod)}</td>
+            <td class="col-num col-stock px-4 py-3 font-bold ${stockCls}">${CommonUtils.formatNumber(item.stock)}</td>
         `;
         totalP += item.prodInPeriod;
         totalO += item.outInPeriod;

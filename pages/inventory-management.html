@@ -9,10 +9,34 @@
     <link href="../assets/css/common.css" rel="stylesheet">
     <script src="../assets/js/sheets-api.js?v=20260615h"></script>
     <style>
-        /* 재고 관리 페이지 전용 스타일 - 테이블 가운데 정렬 */
+        /* 재고 표 — 컴팩트형: 행 촘촘 + 구분선 유지 + 숫자 우측정렬 + 0값 흐리게 + 재고열 강조 */
         .data-table th,
         .data-table td {
-            text-align: center !important;
+            padding: 0.5rem 1rem;
+        }
+        /* 컴팩트 상태에서 행 경계가 또렷하도록 가로 구분선 강화 */
+        .data-table td {
+            border-bottom: 1px solid #d1d5db;
+        }
+        /* 품목명은 가운데, 숫자 3열은 오른쪽 정렬(자릿수 비교 쉽게) */
+        .data-table th.col-name,
+        .data-table td.col-name {
+            text-align: center;
+        }
+        .data-table th.col-num,
+        .data-table td.col-num {
+            text-align: right;
+            padding-right: 1.5rem;
+            font-variant-numeric: tabular-nums;
+        }
+        /* 생산·출고가 0인 칸은 흐리게 처리해 실제 값이 있는 칸만 눈에 띄게 */
+        .data-table td.zero {
+            color: #9ca3af;
+        }
+        /* 현재 재고 열 강조 띠 */
+        .data-table th.col-stock,
+        .data-table td.col-stock {
+            border-left: 2px solid #93c5fd;
         }
     </style>
 </head>
@@ -78,16 +102,16 @@
             <table class="data-table w-full">
                 <thead>
                     <tr>
-                        <th class="px-4 py-3 text-center cursor-pointer hover:bg-gray-100" onclick="sortTable('name')">
+                        <th class="col-name px-4 py-3 cursor-pointer hover:bg-gray-100" onclick="sortTable('name')">
                             품목명 (규격) <span id="sort-name" class="sort-icon"></span>
                         </th>
-                        <th class="px-4 py-3 text-center cursor-pointer hover:bg-gray-100" onclick="sortTable('prod')">
+                        <th class="col-num px-4 py-3 cursor-pointer hover:bg-gray-100" onclick="sortTable('prod')">
                             당월 생산 <span id="sort-prod" class="sort-icon"></span>
                         </th>
-                        <th class="px-4 py-3 text-center cursor-pointer hover:bg-gray-100" onclick="sortTable('out')">
+                        <th class="col-num px-4 py-3 cursor-pointer hover:bg-gray-100" onclick="sortTable('out')">
                             당월 출고 <span id="sort-out" class="sort-icon"></span>
                         </th>
-                        <th class="px-4 py-3 text-center bg-blue-50 cursor-pointer hover:bg-blue-100"
+                        <th class="col-num col-stock px-4 py-3 bg-blue-50 cursor-pointer hover:bg-blue-100"
                             onclick="sortTable('stock')">
                             현재 재고 <span id="sort-stock" class="sort-icon"></span>
                         </th>
@@ -103,7 +127,7 @@
     </main>
 
     <script src="../assets/js/common.js"></script>
-    <script src="../assets/js/inventory-management.js?v=20260617a"></script>
+    <script src="../assets/js/inventory-management.js?v=20260702b"></script>
 </body>
 
 </html>
