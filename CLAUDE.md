@@ -13,7 +13,8 @@
 
 - **두발로 주식회사**의 매출/관급 분석 PWA (정적 사이트)
 - HTML/CSS/Vanilla JS만 사용. 빌드 도구·번들러 없음.
-- 페이지 6개: `index`, `monthly-sales`, `customer-analysis`, `agency-purchase`, `supplier-ranking`, `trend-analysis`, `inventory-management`
+- 분석 페이지: `index`, `market-analysis`(시장 분석 — 수요기관/업체/트렌드/주간주문내역 4탭), `monthly-sales`(매출 분석), `customer-analysis`, `inventory-management` (+ `order-management`·견적/송장/명세서 print·delivery 등)
+  - ⚠️ 구 `agency-purchase`·`supplier-ranking`·`trend-analysis` 3페이지는 `market-analysis`로 통합·**삭제됨**(2026-07-21, 커밋 트랙 F 마무리)
 - 배포: GitHub `DUBALLO/tpdlfwm` → Cloudflare Pages 자동 빌드 → `dash.duballo.kr`
 
 ## 사용자 / 협업 스타일
@@ -38,7 +39,7 @@
   - 시트 3개: `procurement`, `nonSlip`, `vegetationMat` (헤더 39컬럼 동일)
 - **2026년**: 조달청 공공데이터 API `getSpcifyPrdlstPrcureInfoList` — `assets/js/public-data-api.js`
 - 두 소스는 `loadAllProcurementData()`에서 concat
-- 4개 분석 페이지(agency-purchase, customer-analysis, supplier-ranking, trend-analysis)가 이걸 공유
+- `market-analysis`(수요기관/업체/트렌드/주간주문내역 탭)와 `customer-analysis`가 이걸 공유 (구 agency-purchase·supplier-ranking·trend-analysis는 market-analysis로 통합·삭제)
 
 ## Cowork 데이터 허브 (별도 폴더)
 
@@ -154,9 +155,7 @@ Cloudflare Access 게이트
 ├── pages/
 │   ├── monthly-sales.html         ← 판매 데이터 기반
 │   ├── customer-analysis.html     ← 관급매출 집계 (조달 데이터)
-│   ├── agency-purchase.html       ← 수요기관 분석 (조달 데이터)
-│   ├── supplier-ranking.html      ← 업체 판매순위
-│   ├── trend-analysis.html        ← 트렌드 분석
+│   ├── market-analysis.html       ← 시장 분석 (수요기관/업체/트렌드/주간주문내역 4탭, 조달 데이터)
 │   └── inventory-management.html  ← 재고 현황
 ├── assets/
 │   ├── css/common.css             ← 모달 등 공통 스타일
@@ -165,7 +164,7 @@ Cloudflare Access 게이트
 │       ├── sheets-api.js          ← 시트 로드 + dedup
 │       ├── public-data-api.js     ← 2026 API + dedup
 │       ├── customer-analysis.js
-│       ├── agency-purchase.js
+│       ├── market-analysis.js      ← 시장 분석 4탭 (IIFE+오케스트레이터)
 │       └── (page별 1개씩)
 └── docs/
     ├── data-integrity-check.md    ← 정합성 점검 리포트
