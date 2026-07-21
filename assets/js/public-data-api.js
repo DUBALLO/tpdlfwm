@@ -3,20 +3,16 @@
 
 class PublicDataAPI {
     constructor() {
-        this.apiKey = 'd39e9054120b8d222a53a74dfe83050102d6549c665cdae19efb9330b6451852';
-        this.baseUrl = 'https://apis.data.go.kr/1230000/at/ShoppingMallPrdctInfoService/getSpcifyPrdlstPrcureInfoList';
+        // 조달청 호출은 우리 서버 함수(/api/procurement)가 대신 수행한다.
+        // API 키는 서버 환경변수(PROCUREMENT_API_KEY)에만 있고 클라이언트에는 없다.
+        // (구조 변경 전: 키를 여기 하드코딩 + 공개 CORS 프록시 경유 → 프록시 사망으로 조달청 데이터 미로드)
+        this.apiEndpoint = '/api/procurement';
         this.cacheKey = 'cached2026ApiData_v8';
 
         this.targetItems = [
             { code: '3012170206', name: '보행매트' },
             { code: '3012170208', name: '식생매트' },
             { code: '3016190801', name: '논슬립' }
-        ];
-
-        this.requestRoutes = [
-            { name: 'direct', buildUrl: (url) => url },
-            { name: 'allorigins', buildUrl: (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}` },
-            { name: 'bridged', buildUrl: (url) => `https://cors.bridged.cc/${url}` }
         ];
     }
 
@@ -178,114 +174,92 @@ class PublicDataAPI {
 
     async getSpecificItemData(itemCode, bgnDate, endDate, pageNo = 1, numOfRows = 999) {
         const params = new URLSearchParams({
-            ServiceKey: this.apiKey,
-            numOfRows: String(numOfRows),
+            itemCode: String(itemCode),
+            bgnDate: String(bgnDate),
+            endDate: String(endDate),
             pageNo: String(pageNo),
-            type: 'json',
-            inqryDiv: '1',
-            inqryBgnDate: bgnDate,
-            inqryEndDate: endDate,
-            inqryPrdctDiv: '2',
-            dtilPrdctClsfcNo: itemCode
+            numOfRows: String(numOfRows)
         });
 
-        const originalUrl = `${this.baseUrl}?${params.toString()}`;
-        const errors = [];
+        const requestUrl = `${this.apiEndpoint}?${params.toString()}`;
 
-        for (const route of this.requestRoutes) {
-            const requestUrl = route.buildUrl(originalUrl);
-
-            try {
-                const response = await fetch(requestUrl, {
-                    method: 'GET',
-                    headers: {
-                        'Accept': 'application/json, text/plain, */*'
-                    }
-                });
-
-                const textData = await response.text();
-
-                if (!response.ok) {
-                    errors.push(`[${route.name}] HTTP ${response.status}`);
-                    continue;
+        try {
+            const response = await fetch(requestUrl, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json, text/plain, */*'
                 }
+            });
 
-                if (!textData || !textData.trim()) {
-                    errors.push(`[${route.name}] empty response`);
-                    continue;
-                }
+            const textData = await response.text();
 
-                if (textData.trim().startsWith('<')) {
-                    errors.push(`[${route.name}] xml response`);
-                    continue;
-                }
-
-                let json;
-                try {
-                    json = JSON.parse(textData);
-                } catch (e) {
-                    errors.push(`[${route.name}] json parse fail`);
-                    continue;
-                }
-
-                const root = json.response || json;
-                const header = root.header || {};
-                const body = root.body || root.data || {};
-
-                if (header.resultCode && header.resultCode !== '00') {
-                    errors.push(`[${route.name}] API 오류 ${header.resultCode} ${header.resultMsg || ''}`);
-                    continue;
-                }
-
-                const totalCount = Number(body.totalCount ?? root.totalCount ?? 0);
-
-                let items = [];
-
-                if (body?.items?.item) {
-                    items = Array.isArray(body.items.item) ? body.items.item : [body.items.item];
-                } else if (Array.isArray(body?.items)) {
-                    items = body.items;
-                } else if (body?.items && typeof body.items === 'object') {
-                    items = [body.items];
-                } else if (Array.isArray(body?.item)) {
-                    items = body.item;
-                } else if (body?.item && typeof body.item === 'object') {
-                    items = [body.item];
-                } else if (Array.isArray(root?.items?.item)) {
-                    items = root.items.item;
-                } else if (root?.items?.item && typeof root.items.item === 'object') {
-                    items = [root.items.item];
-                } else if (Array.isArray(root?.items)) {
-                    items = root.items;
-                } else if (Array.isArray(json?.data)) {
-                    items = json.data;
-                }
-
-                if (totalCount > 0 && items.length === 0) {
-                    console.warn('[API 응답 구조 확인]', {
-                        route: route.name,
-                        totalCount,
-                        bodyKeys: body ? Object.keys(body) : [],
-                        sample: textData.slice(0, 800)
-                    });
-                }
-
-                return {
-                    ok: true,
-                    totalCount,
-                    items
-                };
-            } catch (err) {
-                errors.push(`[${route.name}] ${err.message || String(err)}`);
+            if (!response.ok) {
+                return { ok: false, totalCount: 0, items: [], message: `HTTP ${response.status} ${textData.slice(0, 200)}` };
             }
-        }
 
-        return {
-            ok: false,
-            totalCount: 0,
-            items: [],
-            message: errors.join(' | ')
-        };
+            if (!textData || !textData.trim()) {
+                return { ok: false, totalCount: 0, items: [], message: 'empty response' };
+            }
+
+            if (textData.trim().startsWith('<')) {
+                return { ok: false, totalCount: 0, items: [], message: 'xml response' };
+            }
+
+            let json;
+            try {
+                json = JSON.parse(textData);
+            } catch (e) {
+                return { ok: false, totalCount: 0, items: [], message: 'json parse fail' };
+            }
+
+            const root = json.response || json;
+            const header = root.header || {};
+            const body = root.body || root.data || {};
+
+            if (header.resultCode && header.resultCode !== '00') {
+                return { ok: false, totalCount: 0, items: [], message: `API 오류 ${header.resultCode} ${header.resultMsg || ''}` };
+            }
+
+            const totalCount = Number(body.totalCount ?? root.totalCount ?? 0);
+
+            let items = [];
+
+            if (body?.items?.item) {
+                items = Array.isArray(body.items.item) ? body.items.item : [body.items.item];
+            } else if (Array.isArray(body?.items)) {
+                items = body.items;
+            } else if (body?.items && typeof body.items === 'object') {
+                items = [body.items];
+            } else if (Array.isArray(body?.item)) {
+                items = body.item;
+            } else if (body?.item && typeof body.item === 'object') {
+                items = [body.item];
+            } else if (Array.isArray(root?.items?.item)) {
+                items = root.items.item;
+            } else if (root?.items?.item && typeof root.items.item === 'object') {
+                items = [root.items.item];
+            } else if (Array.isArray(root?.items)) {
+                items = root.items;
+            } else if (Array.isArray(json?.data)) {
+                items = json.data;
+            }
+
+            if (totalCount > 0 && items.length === 0) {
+                console.warn('[API 응답 구조 확인]', {
+                    totalCount,
+                    bodyKeys: body ? Object.keys(body) : [],
+                    sample: textData.slice(0, 800)
+                });
+            }
+
+            return {
+                ok: true,
+                totalCount,
+                items
+            };
+        } catch (err) {
+            return { ok: false, totalCount: 0, items: [], message: err.message || String(err) };
+        }
     }
 
     normalizeSignedNumber(value) {

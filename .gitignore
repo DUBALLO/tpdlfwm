@@ -25,5 +25,8 @@ node_modules/
 # wrangler 로컬 dev 캐시
 .wrangler/
 
+# 로컬 dev 환경변수 (조달청 API 키 등 시크릿 — 절대 커밋 금지)
+.dev.vars
+
 # 로그
 *.log
