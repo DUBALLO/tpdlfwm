@@ -3,7 +3,7 @@
 // 설계: 각 탭 = 독립 IIFE(전역/함수명 충돌 0), DOM은 자기 탭 root로 스코프($id).
 //       B소스(loadAllProcurementData)는 오케스트레이터가 1회 로드해 3탭 공유.
 //       트렌드는 두발로 필터 제거 → 시장 전체 추이. cross-link 업체↔수요기관.
-console.log('%c[market-analysis.js v=20260721b — 시장 분석 통합(수요기관/업체/트렌드/주간주문내역), B소스 1회 로드]', 'color:#0ea5e9; font-weight:bold');
+console.log('%c[market-analysis.js v=20260721c — 시장 분석 통합(수요기관/업체/트렌드/주간주문내역), B소스 1회 로드]', 'color:#0ea5e9; font-weight:bold');
 
 /* =========================================================================
  * IIFE 1 — 수요기관 분석 (원 agency-purchase.js)
@@ -1433,7 +1433,8 @@ console.log('%c[market-analysis.js v=20260721b — 시장 분석 통합(수요�
 
         const products = [...new Set(orders.flatMap(o => o.productList))].filter(Boolean).sort();
         const pSel = $id('woProduct');
-        pSel.innerHTML = '<option value="">전체 품목</option>' + products.map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('');
+        pSel.innerHTML = products.map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('');
+        pSel.value = products.find(p => p.includes('보행')) || products[0] || '';   // 디폴트 보행매트
     }
 
     function render() {
@@ -1457,7 +1458,7 @@ console.log('%c[market-analysis.js v=20260721b — 시장 분석 통합(수요�
         weeks.forEach(w => {
             html += `<div class="wo-week-header">${w.label}<span class="wo-week-meta">${w.orders.length}건 · 합계 ${CommonUtils.formatCurrency(w.total)}</span></div>`;
             html += '<table class="wo-table"><thead><tr>' +
-                '<th>날짜</th><th>수요기관</th><th>업체</th><th>품목</th><th class="wo-amt">금액</th>' +
+                '<th>날짜</th><th>수요기관</th><th>업체</th><th class="wo-amt">금액</th>' +
                 '</tr></thead><tbody>';
             w.orders.forEach(o => {
                 const idx = rendered.length;
@@ -1466,7 +1467,6 @@ console.log('%c[market-analysis.js v=20260721b — 시장 분석 통합(수요�
                     `<td class="wo-date">${fmtDate(o.date)}</td>` +
                     `<td>${esc(o.agency)}</td>` +
                     `<td>${esc(o.supplier)}</td>` +
-                    `<td>${esc(o.product)}</td>` +
                     `<td class="wo-amt">${CommonUtils.formatCurrency(o.amount)}</td>` +
                     '</tr>';
             });
