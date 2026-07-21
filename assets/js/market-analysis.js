@@ -3,7 +3,7 @@
 // 설계: 각 탭 = 독립 IIFE(전역/함수명 충돌 0), DOM은 자기 탭 root로 스코프($id).
 //       B소스(loadAllProcurementData)는 오케스트레이터가 1회 로드해 3탭 공유.
 //       트렌드는 두발로 필터 제거 → 시장 전체 추이. cross-link 업체↔수요기관.
-console.log('%c[market-analysis.js v=20260721e — 시장 분석 통합(수요기관/업체/트렌드/월간주문내역: 월별·검색총합·인쇄), B소스 1회 로드]', 'color:#0ea5e9; font-weight:bold');
+console.log('%c[market-analysis.js v=20260721f — 시장 분석 통합(수요기관/업체/트렌드/월간주문내역: 월별·검색총합·인쇄 세로), B소스 1회 로드]', 'color:#0ea5e9; font-weight:bold');
 
 /* =========================================================================
  * IIFE 1 — 수요기관 분석 (원 agency-purchase.js)
@@ -1371,7 +1371,7 @@ console.log('%c[market-analysis.js v=20260721e — 시장 분석 통합(수요�
             $id('woYear').addEventListener('change', render);
             $id('woProduct').addEventListener('change', render);
             $id('woSearch').addEventListener('input', render);
-            $id('woPrint').addEventListener('click', () => window.print());
+            $id('woPrint').addEventListener('click', doPrint);
             $id('weeklyList').addEventListener('click', onRowClick);
             render();
         } catch (error) {
@@ -1496,6 +1496,23 @@ console.log('%c[market-analysis.js v=20260721e — 시장 분석 통합(수요�
         if (!tr) return;
         const o = rendered[Number(tr.dataset.idx)];
         if (o) showOrderPopup(o);
+    }
+
+    // 인쇄 — 이 탭은 세로 리스트라 페이지 공통 @page(landscape)를 세로로 덮어씀(인쇄 후 원복)
+    function doPrint() {
+        const style = document.createElement('style');
+        style.id = 'wo-print-orientation';
+        style.textContent = '@media print { @page { size: A4 portrait; margin: 1.2cm; } }';
+        document.head.appendChild(style);
+        const cleanup = () => {
+            const s = document.getElementById('wo-print-orientation');
+            if (s) s.remove();
+            window.removeEventListener('afterprint', cleanup);
+        };
+        window.addEventListener('afterprint', cleanup);
+        window.print();
+        // afterprint 미지원 브라우저 폴백
+        setTimeout(cleanup, 3000);
     }
 
     // 계약 상세 팝업 (agency-purchase.js showContractItemsPopup 동일 로직)
