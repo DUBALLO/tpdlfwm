@@ -3,7 +3,7 @@
 // 설계: 각 탭 = 독립 IIFE(전역/함수명 충돌 0), DOM은 자기 탭 root로 스코프($id).
 //       B소스(loadAllProcurementData)는 오케스트레이터가 1회 로드해 3탭 공유.
 //       트렌드는 두발로 필터 제거 → 시장 전체 추이. cross-link 업체↔수요기관.
-console.log('%c[market-analysis.js v=20260721c — 시장 분석 통합(수요기관/업체/트렌드/주간주문내역), B소스 1회 로드]', 'color:#0ea5e9; font-weight:bold');
+console.log('%c[market-analysis.js v=20260721d — 시장 분석 통합(수요기관/업체/트렌드/주간주문내역+검색), B소스 1회 로드]', 'color:#0ea5e9; font-weight:bold');
 
 /* =========================================================================
  * IIFE 1 — 수요기관 분석 (원 agency-purchase.js)
@@ -1368,6 +1368,7 @@ console.log('%c[market-analysis.js v=20260721c — 시장 분석 통합(수요�
             populateFilters();
             $id('woYear').addEventListener('change', render);
             $id('woProduct').addEventListener('change', render);
+            $id('woSearch').addEventListener('input', render);
             $id('weeklyList').addEventListener('click', onRowClick);
             render();
         } catch (error) {
@@ -1440,9 +1441,11 @@ console.log('%c[market-analysis.js v=20260721c — 시장 분석 통합(수요�
     function render() {
         const year = $id('woYear').value;
         const prod = $id('woProduct').value;
+        const q = $id('woSearch').value.trim().toLowerCase();
         const filtered = orders.filter(o =>
             (!year || o.date.slice(0, 4) === year) &&
-            (!prod || o.productList.includes(prod))
+            (!prod || o.productList.includes(prod)) &&
+            (!q || `${o.agency} ${o.supplier} ${o.contractName || ''}`.toLowerCase().includes(q))
         );
 
         const weeks = bucketByWeek(filtered);
