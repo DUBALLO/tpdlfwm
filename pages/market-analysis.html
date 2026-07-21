@@ -24,18 +24,29 @@
             .data-table { font-size: 9pt; box-shadow: none; border: 1px solid #dee2e6; }
             .data-table th, .data-table td { border: 1px solid #dee2e6; padding: 5px; color: #000 !important; background-color: #fff !important; }
             .data-table th { background-color: #f8f9fa !important; }
+            /* 월간 주문내역 인쇄 */
+            #weeklyOrderTab .wo-table { font-size: 9pt; }
+            #weeklyOrderTab .wo-table th, #weeklyOrderTab .wo-table td { border: 1px solid #dee2e6; }
+            #weeklyOrderTab .wo-table tr.wo-month td { background-color: #f1f3f5 !important; }
+            #weeklyOrderTab .wo-summary { border: 1px solid #999; }
         }
-        /* 주간 주문내역 탭 — 주문관리(.completed-list)와 동일한 텍스트 크기(본문 13px/헤더 12px) */
-        #weeklyOrderTab .wo-week-header { margin: 1.25rem 0 0.4rem; font-size: 0.875rem; font-weight: 600; color: #374151; border-bottom: 2px solid #d1d5db; padding-bottom: 0.3rem; }
-        #weeklyOrderTab .wo-week-meta { font-weight: 400; font-size: 0.75rem; color: #6b7280; margin-left: 0.5rem; }
-        #weeklyOrderTab .wo-table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; background: #fff; }
-        #weeklyOrderTab .wo-table th { background: #f3f4f6; padding: 0.5rem; text-align: left; font-weight: 600; color: #4b5563; font-size: 0.75rem; border-bottom: 1px solid #d1d5db; }
-        #weeklyOrderTab .wo-table td { padding: 0.5rem; border-bottom: 1px solid #f3f4f6; }
-        #weeklyOrderTab .wo-table tbody tr { cursor: pointer; }
-        #weeklyOrderTab .wo-table tbody tr:hover { background: #f9fafb; }
+        /* 월간 주문내역 탭 — 단일 테이블(열 정렬 고정), 본문 13px/헤더 12px */
+        #weeklyOrderTab .wo-summary { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 0.5rem; padding: 0.6rem 0.85rem; margin-bottom: 0.6rem; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 0.375rem; }
+        #weeklyOrderTab .wo-sum-ctx { font-size: 0.8125rem; color: #3730a3; font-weight: 600; }
+        #weeklyOrderTab .wo-sum-total { font-size: 0.9375rem; color: #065f46; font-weight: 700; }
+        #weeklyOrderTab .wo-table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; background: #fff; table-layout: fixed; }
+        #weeklyOrderTab .wo-c-date { width: 64px; }
+        #weeklyOrderTab .wo-c-agency { width: 40%; }
+        #weeklyOrderTab .wo-c-amt { width: 132px; }
+        #weeklyOrderTab .wo-table th { background: #f3f4f6; padding: 0.4rem 0.5rem; text-align: left; font-weight: 600; color: #4b5563; font-size: 0.75rem; border-bottom: 1px solid #d1d5db; }
+        #weeklyOrderTab .wo-table td { padding: 0.4rem 0.5rem; border-bottom: 1px solid #f3f4f6; vertical-align: top; overflow-wrap: anywhere; }
+        #weeklyOrderTab .wo-table tbody tr[data-idx] { cursor: pointer; }
+        #weeklyOrderTab .wo-table tbody tr[data-idx]:hover { background: #f9fafb; }
         #weeklyOrderTab .wo-table th.wo-amt, #weeklyOrderTab .wo-table td.wo-amt { text-align: right; white-space: nowrap; }
         #weeklyOrderTab .wo-table td.wo-amt { color: #059669; font-weight: 600; }
         #weeklyOrderTab .wo-table td.wo-date { white-space: nowrap; color: #6b7280; }
+        #weeklyOrderTab .wo-table tr.wo-month td { background: #f9fafb; font-size: 0.8125rem; font-weight: 700; color: #374151; padding: 0.55rem 0.5rem 0.4rem; border-top: 1px solid #e5e7eb; border-bottom: 2px solid #d1d5db; }
+        #weeklyOrderTab .wo-month-meta { font-weight: 400; font-size: 0.75rem; color: #6b7280; margin-left: 0.5rem; }
         #weeklyOrderTab .wo-empty { text-align: center; color: #9ca3af; padding: 2rem; font-size: 0.8125rem; }
     </style>
 </head>
@@ -67,7 +78,7 @@
                 <button type="button" data-tab="agencyTab" class="market-tab py-3 px-1 border-b-2 border-blue-600 text-blue-600 font-medium">수요기관 분석</button>
                 <button type="button" data-tab="supplierTab" class="market-tab py-3 px-1 border-b-2 border-transparent text-gray-500 hover:text-gray-700 font-medium">업체 판매순위</button>
                 <button type="button" data-tab="trendTab" class="market-tab py-3 px-1 border-b-2 border-transparent text-gray-500 hover:text-gray-700 font-medium">트렌드 분석</button>
-                <button type="button" data-tab="weeklyOrderTab" class="market-tab py-3 px-1 border-b-2 border-transparent text-gray-500 hover:text-gray-700 font-medium">주간 주문내역</button>
+                <button type="button" data-tab="weeklyOrderTab" class="market-tab py-3 px-1 border-b-2 border-transparent text-gray-500 hover:text-gray-700 font-medium">월간 주문내역</button>
             </nav>
         </div>
 
@@ -246,13 +257,17 @@
                 <label class="text-sm text-gray-700">검색
                     <input id="woSearch" type="search" placeholder="수요기관·업체·계약명" class="ml-1 border border-gray-300 rounded px-2 py-1 text-sm" style="min-width:180px">
                 </label>
+                <button id="woPrint" type="button" class="border border-gray-300 rounded px-3 py-1 text-sm bg-white hover:bg-gray-50">인쇄</button>
                 <span class="text-xs text-gray-400">시장 전체 · 계약(납품요구) 1건 = 1 주문 · 행 클릭 시 품목 상세</span>
             </div>
-            <div id="weeklyList"></div>
+            <div id="woPrintArea" class="printable-area">
+                <div id="woSummary" class="wo-summary"></div>
+                <div id="weeklyList"></div>
+            </div>
         </div>
     </main>
 
     <script src="../assets/js/common.js"></script>
-    <script src="../assets/js/market-analysis.js?v=20260721d"></script>
+    <script src="../assets/js/market-analysis.js?v=20260721e"></script>
 </body>
 </html>

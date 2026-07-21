@@ -3,7 +3,7 @@
 // 설계: 각 탭 = 독립 IIFE(전역/함수명 충돌 0), DOM은 자기 탭 root로 스코프($id).
 //       B소스(loadAllProcurementData)는 오케스트레이터가 1회 로드해 3탭 공유.
 //       트렌드는 두발로 필터 제거 → 시장 전체 추이. cross-link 업체↔수요기관.
-console.log('%c[market-analysis.js v=20260721d — 시장 분석 통합(수요기관/업체/트렌드/주간주문내역+검색), B소스 1회 로드]', 'color:#0ea5e9; font-weight:bold');
+console.log('%c[market-analysis.js v=20260721e — 시장 분석 통합(수요기관/업체/트렌드/월간주문내역: 월별·검색총합·인쇄), B소스 1회 로드]', 'color:#0ea5e9; font-weight:bold');
 
 /* =========================================================================
  * IIFE 1 — 수요기관 분석 (원 agency-purchase.js)
@@ -1349,9 +1349,11 @@ console.log('%c[market-analysis.js v=20260721d — 시장 분석 통합(수요�
 })();
 
 /* =========================================================================
- * IIFE 4 — 주간 주문내역 (조달청 전체, 납품요구 단위 주문을 주별로)
+ * IIFE 4 — 월간 주문내역 (조달청 전체, 납품요구 단위 주문을 월별로)
  *   1 주문 = 계약납품통합번호(납품요구) 1건. 라인(모델/규격)을 한 주문으로 묶어
- *   기준일자(대표=최신) 기준 주(월~일)별 그룹핑, 최신순. 행 클릭 = 품목 상세 팝업.
+ *   기준일자(대표=최신) 기준 월별 그룹핑, 최신순. 행 클릭 = 품목 상세 팝업.
+ *   단일 테이블(table-layout:fixed + colgroup)로 열 정렬 고정. 검색 결과 총합 표시 + 인쇄.
+ *   ※ 내부 id/함수명은 legacy(weeklyOrderTab/__mWeekly) 유지 — 화면 라벨만 '월간 주문내역'.
  * ========================================================================= */
 (function () {
     let root, hub;
@@ -1369,11 +1371,12 @@ console.log('%c[market-analysis.js v=20260721d — 시장 분석 통합(수요�
             $id('woYear').addEventListener('change', render);
             $id('woProduct').addEventListener('change', render);
             $id('woSearch').addEventListener('input', render);
+            $id('woPrint').addEventListener('click', () => window.print());
             $id('weeklyList').addEventListener('click', onRowClick);
             render();
         } catch (error) {
-            console.error('주간 주문내역 초기화 실패:', error);
-            CommonUtils.showAlert(`주간 주문내역 오류: ${error.message}`, 'error');
+            console.error('월간 주문내역 초기화 실패:', error);
+            CommonUtils.showAlert(`월간 주문내역 오류: ${error.message}`, 'error');
         }
     }
 
@@ -1441,41 +1444,51 @@ console.log('%c[market-analysis.js v=20260721d — 시장 분석 통합(수요�
     function render() {
         const year = $id('woYear').value;
         const prod = $id('woProduct').value;
-        const q = $id('woSearch').value.trim().toLowerCase();
+        const rawQ = $id('woSearch').value.trim();
+        const q = rawQ.toLowerCase();
         const filtered = orders.filter(o =>
             (!year || o.date.slice(0, 4) === year) &&
             (!prod || o.productList.includes(prod)) &&
             (!q || `${o.agency} ${o.supplier} ${o.contractName || ''}`.toLowerCase().includes(q))
         );
 
-        const weeks = bucketByWeek(filtered);
+        // 검색 결과 총 합계 (현재 필터 전체)
+        const grandTotal = filtered.reduce((s, o) => s + (o.amount || 0), 0);
+        const ctx = [year ? `${year}년` : null, prod || null, rawQ ? `검색 '${rawQ}'` : null].filter(Boolean).join(' · ');
+        $id('woSummary').innerHTML =
+            `<span class="wo-sum-ctx">${esc(ctx || '전체')}</span>` +
+            `<span class="wo-sum-total">${filtered.length}건 · 합계 ${CommonUtils.formatCurrency(grandTotal)}</span>`;
+
         const container = $id('weeklyList');
         rendered = [];
 
-        if (!weeks.length) {
+        const months = bucketByMonth(filtered);
+        if (!months.length) {
             container.innerHTML = '<div class="wo-empty">해당 조건의 주문이 없습니다.</div>';
             return;
         }
 
-        let html = '';
-        weeks.forEach(w => {
-            html += `<div class="wo-week-header">${w.label}<span class="wo-week-meta">${w.orders.length}건 · 합계 ${CommonUtils.formatCurrency(w.total)}</span></div>`;
-            html += '<table class="wo-table"><thead><tr>' +
-                '<th>날짜</th><th>수요기관</th><th>업체</th><th class="wo-amt">금액</th>' +
-                '</tr></thead><tbody>';
-            w.orders.forEach(o => {
+        // 단일 테이블(table-layout:fixed + colgroup)로 그려 월이 달라도 열 너비가 정확히 일치
+        let body = '';
+        months.forEach(m => {
+            body += `<tr class="wo-month"><td colspan="4">${m.label}<span class="wo-month-meta">${m.orders.length}건 · 합계 ${CommonUtils.formatCurrency(m.total)}</span></td></tr>`;
+            m.orders.forEach(o => {
                 const idx = rendered.length;
                 rendered.push(o);
-                html += `<tr data-idx="${idx}">` +
+                body += `<tr data-idx="${idx}">` +
                     `<td class="wo-date">${fmtDate(o.date)}</td>` +
                     `<td>${esc(o.agency)}</td>` +
                     `<td>${esc(o.supplier)}</td>` +
                     `<td class="wo-amt">${CommonUtils.formatCurrency(o.amount)}</td>` +
                     '</tr>';
             });
-            html += '</tbody></table>';
         });
-        container.innerHTML = html;
+
+        container.innerHTML =
+            '<table class="wo-table">' +
+            '<colgroup><col class="wo-c-date"><col class="wo-c-agency"><col class="wo-c-supplier"><col class="wo-c-amt"></colgroup>' +
+            '<thead><tr><th>날짜</th><th>수요기관</th><th>업체</th><th class="wo-amt">금액</th></tr></thead>' +
+            `<tbody>${body}</tbody></table>`;
     }
 
     function onRowClick(e) {
@@ -1508,41 +1521,26 @@ console.log('%c[market-analysis.js v=20260721d — 시장 분석 통합(수요�
         CommonUtils.showModal(`'${esc(o.contractName || '주문')}' 품목 상세 내역`, html, { width: '900px' });
     }
 
-    // 주(월요일 시작)별 버킷 — 최신 주 먼저, 주 내부도 최신순
-    function bucketByWeek(list) {
+    // 월별 버킷 — 최신 월 먼저, 월 내부도 최신순
+    function bucketByMonth(list) {
         const map = new Map();
         list.forEach(o => {
-            const monday = weekStart(o.date);
-            let w = map.get(monday);
-            if (!w) { w = { monday, orders: [], total: 0 }; map.set(monday, w); }
-            w.orders.push(o);
-            w.total += o.amount;
+            const ym = String(o.date).slice(0, 7);   // YYYY-MM
+            let m = map.get(ym);
+            if (!m) { m = { ym, orders: [], total: 0 }; map.set(ym, m); }
+            m.orders.push(o);
+            m.total += o.amount;
         });
-        const weeks = [...map.values()];
-        weeks.sort((a, b) => (a.monday < b.monday ? 1 : a.monday > b.monday ? -1 : 0));
-        weeks.forEach(w => {
-            w.orders.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
-            w.label = weekLabel(w.monday);
+        const months = [...map.values()];
+        months.sort((a, b) => (a.ym < b.ym ? 1 : a.ym > b.ym ? -1 : 0));
+        months.forEach(m => {
+            m.orders.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+            const p = m.ym.split('-');
+            m.label = p.length === 2 ? `${p[0]}년 ${Number(p[1])}월` : m.ym;
         });
-        return weeks;
+        return months;
     }
 
-    function weekStart(dateStr) {
-        const d = new Date(dateStr + 'T00:00:00');
-        if (isNaN(d)) return dateStr;
-        const day = d.getDay();                  // 0=일 … 6=토
-        d.setDate(d.getDate() + (day === 0 ? -6 : 1 - day));   // 그 주 월요일로
-        return isoDate(d);
-    }
-    function isoDate(d) {
-        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    }
-    function weekLabel(mondayStr) {
-        const mon = new Date(mondayStr + 'T00:00:00');
-        if (isNaN(mon)) return mondayStr;
-        const sun = new Date(mon); sun.setDate(sun.getDate() + 6);
-        return `${mon.getMonth() + 1}/${mon.getDate()} ~ ${sun.getMonth() + 1}/${sun.getDate()}`;
-    }
     function fmtDate(dateStr) {
         const p = String(dateStr).split('-');
         return p.length === 3 ? `${Number(p[1])}/${Number(p[2])}` : dateStr;
