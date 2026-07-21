@@ -3,7 +3,7 @@
 // 설계: 각 탭 = 독립 IIFE(전역/함수명 충돌 0), DOM은 자기 탭 root로 스코프($id).
 //       B소스(loadAllProcurementData)는 오케스트레이터가 1회 로드해 3탭 공유.
 //       트렌드는 두발로 필터 제거 → 시장 전체 추이. cross-link 업체↔수요기관.
-console.log('%c[market-analysis.js v=20260619a — 시장 분석 통합(수요기관/업체/트렌드), B소스 1회 로드]', 'color:#0ea5e9; font-weight:bold');
+console.log('%c[market-analysis.js v=20260721b — 시장 분석 통합(수요기관/업체/트렌드/주간주문내역), B소스 1회 로드]', 'color:#0ea5e9; font-weight:bold');
 
 /* =========================================================================
  * IIFE 1 — 수요기관 분석 (원 agency-purchase.js)
@@ -1349,13 +1349,213 @@ console.log('%c[market-analysis.js v=20260619a — 시장 분석 통합(수요�
 })();
 
 /* =========================================================================
+ * IIFE 4 — 주간 주문내역 (조달청 전체, 납품요구 단위 주문을 주별로)
+ *   1 주문 = 계약납품통합번호(납품요구) 1건. 라인(모델/규격)을 한 주문으로 묶어
+ *   기준일자(대표=최신) 기준 주(월~일)별 그룹핑, 최신순. 행 클릭 = 품목 상세 팝업.
+ * ========================================================================= */
+(function () {
+    let root, hub;
+    let orders = [];        // 납품요구 단위로 묶은 주문 배열
+    let rendered = [];       // 현재 렌더된 주문(행 data-idx → 주문) 조회용
+
+    const $id = id => root.querySelector('#' + id);
+    const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+    function init(rootEl, rawData, hubRef) {
+        root = rootEl; hub = hubRef;
+        try {
+            orders = groupOrders(parseRows(rawData));
+            populateFilters();
+            $id('woYear').addEventListener('change', render);
+            $id('woProduct').addEventListener('change', render);
+            $id('weeklyList').addEventListener('click', onRowClick);
+            render();
+        } catch (error) {
+            console.error('주간 주문내역 초기화 실패:', error);
+            CommonUtils.showAlert(`주간 주문내역 오류: ${error.message}`, 'error');
+        }
+    }
+
+    // rawData(dedup 완료 rows) → 필요한 필드만 뽑은 라인 배열
+    function parseRows(rawData) {
+        const rows = [];
+        (rawData || []).forEach(r => {
+            const date = (r['기준일자'] || '').trim();
+            const agency = (r['수요기관명'] || '').trim();
+            const supplier = (r['업체'] || '').trim();
+            if (!date || !agency || !supplier) return;   // 결손 행 제외
+            rows.push({
+                date,
+                agency,
+                supplier,
+                product: (r['세부품명'] || '').trim(),
+                amount: Number(CommonUtils.parseSignedAmount(r['공급금액'])) || 0,
+                contractNo: (r['계약납품통합번호'] || '').trim(),
+                contractName: (r['계약명'] || '').trim(),
+                fullProductName: (r['물품식별명'] || '').trim(),
+                quantity: Number(CommonUtils.parseSignedAmount(r['계약납품수량'])) || 0,
+                unitPrice: Number(CommonUtils.parseSignedAmount(r['계약납품단가'])) || 0
+            });
+        });
+        return rows;
+    }
+
+    // 라인 → 납품요구(계약) 단위 주문으로 묶기
+    function groupOrders(rows) {
+        const map = new Map();
+        rows.forEach(r => {
+            // 납품요구번호 우선, 결손 시 계약명+업체+수요기관+날짜로 분리
+            const key = r.contractNo || ('명|' + r.contractName + '|' + r.supplier + '|' + r.agency + '|' + r.date);
+            let o = map.get(key);
+            if (!o) {
+                o = { date: r.date, agency: r.agency, supplier: r.supplier, contractName: r.contractName,
+                      amount: 0, productSet: new Set(), lineItems: [] };
+                map.set(key, o);
+            }
+            o.amount += r.amount;
+            if (r.product) o.productSet.add(r.product);
+            if (r.date > o.date) o.date = r.date;   // 대표 = 그룹 내 최신 기준일자
+            o.lineItems.push({ fullProductName: r.fullProductName, quantity: r.quantity, unitPrice: r.unitPrice, amount: r.amount });
+        });
+        return [...map.values()].map(o => {
+            o.productList = [...o.productSet];
+            o.product = o.productList.length ? o.productList.join(', ') : '-';
+            delete o.productSet;
+            return o;
+        });
+    }
+
+    function populateFilters() {
+        const years = [...new Set(orders.map(o => o.date.slice(0, 4)).filter(Boolean))].sort().reverse();
+        const ySel = $id('woYear');
+        ySel.innerHTML = years.map(y => `<option value="${y}">${y}년</option>`).join('');
+        if (years.length) ySel.value = years[0];
+
+        const products = [...new Set(orders.flatMap(o => o.productList))].filter(Boolean).sort();
+        const pSel = $id('woProduct');
+        pSel.innerHTML = '<option value="">전체 품목</option>' + products.map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('');
+    }
+
+    function render() {
+        const year = $id('woYear').value;
+        const prod = $id('woProduct').value;
+        const filtered = orders.filter(o =>
+            (!year || o.date.slice(0, 4) === year) &&
+            (!prod || o.productList.includes(prod))
+        );
+
+        const weeks = bucketByWeek(filtered);
+        const container = $id('weeklyList');
+        rendered = [];
+
+        if (!weeks.length) {
+            container.innerHTML = '<div class="wo-empty">해당 조건의 주문이 없습니다.</div>';
+            return;
+        }
+
+        let html = '';
+        weeks.forEach(w => {
+            html += `<div class="wo-week-header">${w.label}<span class="wo-week-meta">${w.orders.length}건 · 합계 ${CommonUtils.formatCurrency(w.total)}</span></div>`;
+            html += '<table class="wo-table"><thead><tr>' +
+                '<th>날짜</th><th>수요기관</th><th>업체</th><th>품목</th><th class="wo-amt">금액</th>' +
+                '</tr></thead><tbody>';
+            w.orders.forEach(o => {
+                const idx = rendered.length;
+                rendered.push(o);
+                html += `<tr data-idx="${idx}">` +
+                    `<td class="wo-date">${fmtDate(o.date)}</td>` +
+                    `<td>${esc(o.agency)}</td>` +
+                    `<td>${esc(o.supplier)}</td>` +
+                    `<td>${esc(o.product)}</td>` +
+                    `<td class="wo-amt">${CommonUtils.formatCurrency(o.amount)}</td>` +
+                    '</tr>';
+            });
+            html += '</tbody></table>';
+        });
+        container.innerHTML = html;
+    }
+
+    function onRowClick(e) {
+        const tr = e.target.closest('tr[data-idx]');
+        if (!tr) return;
+        const o = rendered[Number(tr.dataset.idx)];
+        if (o) showOrderPopup(o);
+    }
+
+    // 계약 상세 팝업 (agency-purchase.js showContractItemsPopup 동일 로직)
+    function showOrderPopup(o) {
+        const items = Array.isArray(o.lineItems) ? o.lineItems : [];
+        let html = `<p class="text-sm text-gray-600 mb-3"><span class="font-medium">${esc(o.agency)}</span> · ${esc(o.supplier)} · 총 ${items.length}개 라인 · 합계 ${CommonUtils.formatCurrency(o.amount)}</p>`;
+        if (items.length === 0) {
+            html += '<p class="text-center text-gray-500 py-4">이 주문에는 등록된 품목 정보가 없습니다.</p>';
+        } else {
+            html += '<div class="overflow-x-auto"><table class="w-full text-sm text-left"><thead class="bg-gray-50"><tr>' +
+                '<th class="p-2">모델</th><th class="p-2">규격</th><th class="p-2 text-right">수량</th><th class="p-2 text-right">단가</th><th class="p-2 text-right">합계액</th>' +
+                '</tr></thead><tbody>';
+            [...items].sort((a, b) => (b.amount || 0) - (a.amount || 0)).forEach(line => {
+                const { model, spec, raw } = CommonUtils.parseProductIdentName(line.fullProductName);
+                const specCell = (spec === '-' && raw) ? `<span class="text-gray-500" title="원본">${esc(raw)}</span>` : esc(spec);
+                html += `<tr class="border-b"><td class="p-2 whitespace-nowrap">${esc(model)}</td><td class="p-2">${specCell}</td>` +
+                    `<td class="p-2 text-right">${CommonUtils.formatNumber(line.quantity) || '-'}</td>` +
+                    `<td class="p-2 text-right">${line.unitPrice ? CommonUtils.formatCurrency(line.unitPrice) : '-'}</td>` +
+                    `<td class="p-2 text-right font-medium">${CommonUtils.formatCurrency(line.amount)}</td></tr>`;
+            });
+            html += '</tbody></table></div>';
+        }
+        CommonUtils.showModal(`'${esc(o.contractName || '주문')}' 품목 상세 내역`, html, { width: '900px' });
+    }
+
+    // 주(월요일 시작)별 버킷 — 최신 주 먼저, 주 내부도 최신순
+    function bucketByWeek(list) {
+        const map = new Map();
+        list.forEach(o => {
+            const monday = weekStart(o.date);
+            let w = map.get(monday);
+            if (!w) { w = { monday, orders: [], total: 0 }; map.set(monday, w); }
+            w.orders.push(o);
+            w.total += o.amount;
+        });
+        const weeks = [...map.values()];
+        weeks.sort((a, b) => (a.monday < b.monday ? 1 : a.monday > b.monday ? -1 : 0));
+        weeks.forEach(w => {
+            w.orders.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+            w.label = weekLabel(w.monday);
+        });
+        return weeks;
+    }
+
+    function weekStart(dateStr) {
+        const d = new Date(dateStr + 'T00:00:00');
+        if (isNaN(d)) return dateStr;
+        const day = d.getDay();                  // 0=일 … 6=토
+        d.setDate(d.getDate() + (day === 0 ? -6 : 1 - day));   // 그 주 월요일로
+        return isoDate(d);
+    }
+    function isoDate(d) {
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+    function weekLabel(mondayStr) {
+        const mon = new Date(mondayStr + 'T00:00:00');
+        if (isNaN(mon)) return mondayStr;
+        const sun = new Date(mon); sun.setDate(sun.getDate() + 6);
+        return `${mon.getMonth() + 1}/${mon.getDate()} ~ ${sun.getMonth() + 1}/${sun.getDate()}`;
+    }
+    function fmtDate(dateStr) {
+        const p = String(dateStr).split('-');
+        return p.length === 3 ? `${Number(p[1])}/${Number(p[2])}` : dateStr;
+    }
+
+    window.__mWeekly = { init };
+})();
+
+/* =========================================================================
  * 오케스트레이터 — 상위 탭 전환 + B소스 1회 로드 + 지연 init + cross-link 허브
  * ========================================================================= */
 (function () {
     const Hub = window.MarketHub = {};
     let rawProcurement = null;
     let dataPromise = null;
-    const loaded = { agencyTab: false, supplierTab: false, trendTab: false };
+    const loaded = { agencyTab: false, supplierTab: false, trendTab: false, weeklyOrderTab: false };
 
     function ensureData() {
         if (!dataPromise) {
@@ -1385,7 +1585,7 @@ console.log('%c[market-analysis.js v=20260619a — 시장 분석 통합(수요�
             b.classList.toggle('border-transparent', !on);
             b.classList.toggle('text-gray-500', !on);
         });
-        ['agencyTab', 'supplierTab', 'trendTab'].forEach(id => {
+        ['agencyTab', 'supplierTab', 'trendTab', 'weeklyOrderTab'].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.classList.toggle('hidden', id !== tab);
         });
@@ -1404,6 +1604,7 @@ console.log('%c[market-analysis.js v=20260619a — 시장 분석 통합(수요�
             if (tab === 'agencyTab') window.__mAgency.init(root, rawProcurement, Hub);
             else if (tab === 'supplierTab') await window.__mSupplier.init(root, rawProcurement, Hub);
             else if (tab === 'trendTab') window.__mTrend.init(root, rawProcurement, Hub);
+            else if (tab === 'weeklyOrderTab') window.__mWeekly.init(root, rawProcurement, Hub);
             loaded[tab] = true;
         }
     }
