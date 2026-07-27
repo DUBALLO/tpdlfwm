@@ -1621,6 +1621,7 @@ console.log('%c[market-analysis.js v=20260721f — 시장 분석 통합(수요�
             populateFilters();
             $id('pcYear').addEventListener('change', render);
             $id('pcThickness').addEventListener('change', render);
+            $id('pcWidth').addEventListener('change', render);
             $id('pcType').addEventListener('change', render);
             $id('pcPrint').addEventListener('click', () => window.print());
             $id('pcTableWrap').addEventListener('click', onRowClick);
@@ -1691,6 +1692,13 @@ console.log('%c[market-analysis.js v=20260721f — 시장 분석 통합(수요�
         const best = Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a])[0];
         if (best) tSel.value = best;                                // 기본 = 표본 최다 두께
 
+        // 폭 — ㎡ 환산으로 폭이 달라도 비교되지만, 폭이 클수록 ㎡단가가 싼 경향이 실제로 있어
+        // (2025·30t 실측: 600mm 28,333원 → 1500mm 25,333원 → 2000mm 24,500원)
+        // 폭 구성이 다른 업체끼리는 불리/유리가 갈린다. 고정해서 볼 수 있게 필터 제공(기본 전체).
+        const ws = [...new Set(recs.map(r => r.width))].sort((a, b) => a - b);
+        $id('pcWidth').innerHTML = '<option value="all">전체</option>'
+            + ws.map(w => `<option value="${w}">${w}mm</option>`).join('');
+
         const types = [...new Set(recs.map(r => r.type))].filter(t => t && t !== '미상').sort();
         $id('pcType').innerHTML = '<option value="all">전체</option>'
             + types.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('')
@@ -1700,10 +1708,12 @@ console.log('%c[market-analysis.js v=20260721f — 시장 분석 통합(수요�
     function render() {
         const year = $id('pcYear').value;
         const th = $id('pcThickness').value;
+        const width = $id('pcWidth').value;
         const type = $id('pcType').value;
 
         const g0 = recs.filter(r => (year === 'all' || r.year === year)
             && String(r.thickness) === String(th)
+            && (width === 'all' || String(r.width) === String(width))
             && (type === 'all' || r.type === type));
 
         // 오등록 이상치 제거 — 단가칸에 총액이 들어간 레코드가 실제로 존재(수백만 원/㎡).
@@ -1712,7 +1722,7 @@ console.log('%c[market-analysis.js v=20260721f — 시장 분석 통합(수요�
         const g = med0 ? g0.filter(r => r.perM2 >= med0 / 5 && r.perM2 <= med0 * 5) : g0;
         const dropped = g0.length - g.length;
 
-        const ctx = `${year === 'all' ? '전체 기간' : year + '년'} · ${th}t · ${type === 'all' ? '종류 전체' : type}`;
+        const ctx = `${year === 'all' ? '전체 기간' : year + '년'} · ${th}t · ${width === 'all' ? '폭 전체' : width + 'mm'} · ${type === 'all' ? '종류 전체' : type}`;
 
         if (g.length < 10) {
             ranking = [];
