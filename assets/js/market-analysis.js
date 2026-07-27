@@ -1567,35 +1567,44 @@ console.log('%c[market-analysis.js v=20260721f — 시장 분석 통합(수요�
 })();
 
 /* =========================================================================
- * 탭 5: 가격 경쟁력 — 보행매트 실거래 단가로 두발로의 시장 내 가격 위치 산출
+ * 탭 5: 가격 경쟁력 — 종합쇼핑몰 '등록가' 기준으로 두발로의 시장 내 위치 산출
  *
- *  ⚠️ 핵심: 계약납품단가의 단위는 '원/m'이지 '원/㎡'가 아니다.
- *     폭이 600~5000mm로 제각각이라 환산 없이 비교하면 결과가 완전히 틀린다.
- *     원/㎡ = 계약납품단가 ÷ (폭mm / 1000)
+ *  왜 등록가인가: 실거래가는 2단계경쟁·수의계약 할인이 섞여 같은 제품도 크게 널뛴다.
+ *  수요기관이 쇼핑몰에서 비교하며 보는 값이자 우리가 직접 조정하는 레버는 '등록가'다.
  *
- *  규격 포맷: "세부품명, 업체단축명, 모델, {폭}×t{두께}mm[, {종류}]"
- *     예) 보행매트, 두발로, DB-3510, 1000×t35mm, 기본형
- *  - (부품)고정핀은 단위가 '개'라 ㎡ 비교가 불가능 → 제외
- *  - 종류 표기가 없는 레코드가 많아, 표기 있는 레코드로 모델→종류를 학습해 보완
- *    ('빈 값=기본형'으로 가정하면 DBM-*(미끄럼방지형)이 기본형으로 오분류됨)
- *  - 오등록 이상치(수백만 원/㎡)가 존재 → 평균 금지, 중위값(median) 기준
+ *  단가는 원/m 그대로 쓴다(㎡ 환산 없음). 조달은 m 단위로 계약·거래되고,
+ *  규격이 같으면 폭도 같으므로 원/m 직접 비교가 정확하다.
+ *
+ *  데이터 2종을 모델코드로 조인:
+ *   - 등록가  /api/mall (getShoppingMallPrdctInfoList) — 버튼으로 온디맨드 갱신
+ *   - 실거래  이미 4탭이 공유하는 조달 데이터 → 누적 판매액·거래건수
+ *
+ *  ⚠️ 등록가 API 주의: 품목 필터는 '세부품명 한글 문자열'(dtilPrdctClsfcNoNm)이다.
+ *     숫자 코드(dtilPrdctClsfcNo)는 조용히 무시된다(실거래 API와 반대).
+ *     조회 기간은 1년 초과 시 거부 → 연도별로 나눠 호출한다.
  * ========================================================================= */
 (function () {
     const DUBALLO_BIZNO = '7698601460';        // 두발로 주식회사 (769-86-01460)
     const TARGET_PRODUCT = '보행매트';
-    const MIN_SAMPLES = 5;                     // 업체 순위표 편입 최소 거래 건수(잡음 제거)
+    const CACHE_KEY = 'mallRegPrices_v1';
+    const YEARS_BACK = 2;                      // 올해 포함 3개년 (계약기간이 1~2년이라 충분)
     const SPEC_RE = /^(\d+)\s*[×xX]\s*t(\d+)\s*mm$/;
 
     let root, hub;
-    let recs = [];          // 파싱·환산 완료 레코드
-    let ranking = [];       // 현재 필터의 업체별 집계(행 클릭 조회용)
+    let salesByModel = new Map();   // bizno|MODEL → { amount, count }
+    let reg = [];                   // 현재 유효한 등록가 레코드
+    let ranking = [];
     let chart = null;
 
     const $id = id => root.querySelector('#' + id);
     const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const num = v => Number(CommonUtils.parseSignedAmount(v)) || 0;
     const won = n => CommonUtils.formatNumber(Math.round(n)) + '원';
-    const isDuballo = r => r.bizno ? r.bizno === DUBALLO_BIZNO : /^두발로/.test(r.supplier);
+    const eok = n => n >= 100000000 ? (n / 100000000).toFixed(1) + '억' : (n >= 10000 ? Math.round(n / 10000).toLocaleString('ko-KR') + '만' : String(Math.round(n)));
+    const splitIdent = s => String(s || '').split(',').map(x => x.trim()).filter(Boolean);
+    // 조인·식별 키 = 물품식별번호. 같은 업체가 같은 규격에 여러 모델을 등록하는 경우가 실제로 있어
+    // (예: 1000×t35mm 2종 이상) 업체나 모델명으로 묶으면 서로 다른 상품이 뭉개진다.
+    const idntKey = v => String(v || '').trim();
 
     function median(arr) {
         if (!arr.length) return 0;
@@ -1603,247 +1612,274 @@ console.log('%c[market-analysis.js v=20260721f — 시장 분석 통합(수요�
         const n = s.length;
         return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2;
     }
-    function percentileOf(sorted, v) {          // v보다 싼 거래의 비율(%)
-        if (!sorted.length) return 0;
-        let lo = 0, hi = sorted.length;
-        while (lo < hi) { const mid = (lo + hi) >> 1; if (sorted[mid] < v) lo = mid + 1; else hi = mid; }
-        return lo / sorted.length * 100;
-    }
+    const todayStr = () => {
+        const d = new Date();
+        return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+    };
 
     function init(rootEl, rawData, hubRef) {
         root = rootEl; hub = hubRef;
         try {
-            recs = buildRecords(rawData);
-            if (!recs.length) {
-                $id('pcSummary').innerHTML = '<div class="pc-empty">보행매트 실거래 데이터를 찾지 못했습니다.</div>';
-                return;
-            }
-            populateFilters();
-            $id('pcYear').addEventListener('change', render);
-            $id('pcThickness').addEventListener('change', render);
-            $id('pcWidth').addEventListener('change', render);
-            $id('pcType').addEventListener('change', render);
-            $id('pcPrint').addEventListener('click', () => window.print());
+            salesByModel = buildSalesIndex(rawData);
+            $id('pcRefresh').addEventListener('click', refresh);
+            ['pcThickness', 'pcWidth', 'pcType'].forEach(id => $id(id).addEventListener('change', render));
             $id('pcTableWrap').addEventListener('click', onRowClick);
-            render();
+            $id('pcPrint').addEventListener('click', () => window.print());
+
+            const cached = loadCache();
+            if (cached) { reg = cached.items; showStamp(cached.ts); populateFilters(); render(); }
+            else showEmpty('등록가를 아직 불러오지 않았습니다. [등록가 갱신]을 누르세요.');
         } catch (error) {
             console.error('가격 경쟁력 초기화 실패:', error);
             CommonUtils.showAlert(`가격 경쟁력 오류: ${error.message}`, 'error');
         }
     }
 
-    const splitIdent = s => String(s || '').split(',').map(x => x.trim()).filter(Boolean);
-
-    // rawData(dedup 완료) → 보행매트 매트류만 원/㎡ 환산해 레코드화
-    function buildRecords(rawData) {
-        const rows = (rawData || []).filter(r => (r['세부품명'] || '').trim() === TARGET_PRODUCT);
-
-        // 1) 종류 표기가 있는 레코드로 모델→종류 학습 (표기 누락분 보완용)
-        const modelType = new Map();
-        rows.forEach(r => {
-            const p = splitIdent(r['물품식별명']);
-            if (p.length >= 5 && SPEC_RE.test(p[3])) modelType.set(p[1] + '|' + p[2], p[4]);
+    // 실거래(조달 B소스) → 물품식별번호별 누적 판매액·거래건수
+    function buildSalesIndex(rawData) {
+        const map = new Map();
+        let noIdnt = 0;
+        (rawData || []).forEach(r => {
+            if ((r['세부품명'] || '').trim() !== TARGET_PRODUCT) return;
+            const k = idntKey(r['물품식별번호']);
+            if (!k) { noIdnt++; return; }
+            let c = map.get(k);
+            if (!c) { c = { amount: 0, count: 0 }; map.set(k, c); }
+            c.amount += num(r['공급금액']);
+            c.count += 1;
         });
+        console.log(`[가격 경쟁력] 실거래 물품식별번호 ${map.size}종${noIdnt ? ` (식별번호 결손 ${noIdnt}행 제외)` : ''}`);
+        return map;
+    }
 
-        const out = [];
-        let parts = 0, failed = 0;
-        rows.forEach(r => {
-            const raw = (r['물품식별명'] || '').trim();
-            if (raw.includes('(부품)')) { parts++; return; }        // 고정핀 등 = 단위 '개'
-            const p = splitIdent(raw);
+    // ---- 등록가 수집 (버튼) ----
+    async function refresh() {
+        const btn = $id('pcRefresh');
+        btn.disabled = true;
+        const label = btn.textContent;
+        try {
+            const year = new Date().getFullYear();
+            const items = [];
+            for (let y = year - YEARS_BACK; y <= year; y++) {
+                btn.textContent = `${y}년 조회 중…`;
+                const first = await fetchMall(y, 1);
+                if (!first) continue;
+                items.push(...(first.items || []));
+                const pages = Math.ceil(Number(first.totalCount || 0) / 999);
+                for (let p = 2; p <= pages; p++) {
+                    const b = await fetchMall(y, p);
+                    if (b && b.items) items.push(...b.items);
+                }
+            }
+            if (!items.length) throw new Error('등록가를 한 건도 받지 못했습니다.');
+            reg = normalize(items);
+            const ts = Date.now();
+            try { localStorage.setItem(CACHE_KEY, JSON.stringify({ ts, items: reg })); } catch (e) {}
+            showStamp(ts);
+            populateFilters();
+            render();
+        } catch (e) {
+            console.error('등록가 갱신 실패:', e);
+            CommonUtils.showAlert('등록가 갱신 실패: ' + e.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = label;
+        }
+    }
+
+    async function fetchMall(year, pageNo) {
+        const url = `/api/mall?itemName=${encodeURIComponent(TARGET_PRODUCT)}&bgnDate=${year}0101&endDate=${year}1231&pageNo=${pageNo}`;
+        const res = await fetch(url, { cache: 'no-store' });
+        const json = await res.json();
+        const head = json?.response?.header;
+        if (head && head.resultCode !== '00') {
+            console.warn(`[등록가 ${year} p${pageNo}] ${head.resultMsg}`);
+            return null;
+        }
+        return json?.response?.body || null;
+    }
+
+    // 원본 → 현재 유효한 매트만 남기고 규격 파싱 (부품·만료계약 제외, 업체+모델 최신 1건)
+    function normalize(items) {
+        const today = todayStr();
+        const best = new Map();
+        items.forEach(i => {
+            const spec = String(i.prdctSpecNm || '');
+            if (spec.includes('(부품)')) return;                       // 고정핀 = 단위 '개'
+            if (String(i.cntrctEndDate || '') < today) return;         // 만료 계약
+            const p = splitIdent(spec);
             const m = p.length >= 4 ? String(p[3]).match(SPEC_RE) : null;
-            if (!m) { failed++; return; }
-            const width = Number(m[1]);
-            const unitPrice = num(r['계약납품단가']);
-            if (!width || unitPrice <= 0) { failed++; return; }
-            out.push({
-                supplier: (r['업체'] || '').trim(),
-                bizno: String(r['업체사업자등록번호'] || '').replace(/[^\d]/g, ''),
-                agency: (r['수요기관명'] || '').trim(),
+            if (!m) return;
+            const price = Number(i.cntrctPrceAmt) || 0;
+            if (price <= 0) return;
+            const k = idntKey(i.prdctIdntNo);
+            if (!k) return;
+            const prev = best.get(k);
+            if (prev && prev.bgn >= String(i.cntrctBgnDate || '')) return;   // 같은 상품의 갱신분만 채택
+            best.set(k, {
+                key: k,
+                idnt: k,
+                corp: (i.cntrctCorpNm || '').trim(),
+                bizno: String(i.cntrctCorpBizno || '').replace(/[^\d]/g, ''),
                 model: p[2],
-                width,
+                width: Number(m[1]),
                 thickness: Number(m[2]),
-                type: p[4] || modelType.get(p[1] + '|' + p[2]) || '미상',
-                unitPrice,
-                perM2: unitPrice / (width / 1000),
-                qty: num(r['계약납품수량']),
-                amount: num(r['공급금액']),
-                date: (r['기준일자'] || '').trim(),
-                year: String(r['기준일자'] || '').slice(0, 4),
-                fullProductName: raw
+                type: p[4] || '(미표기)',
+                price,
+                unit: (i.prdctUnit || 'm').trim(),
+                bgn: String(i.cntrctBgnDate || ''),
+                end: String(i.cntrctEndDate || '')
             });
         });
-        const rate = out.length + failed ? (failed / (out.length + failed) * 100).toFixed(2) : '0';
-        console.log(`[가격 경쟁력] 보행매트 ${rows.length}행 → 매트 ${out.length}건 (부품 제외 ${parts} · 파싱실패 ${failed}, 실패율 ${rate}%)`);
+        const out = [...best.values()];
+        console.log(`[가격 경쟁력] 등록가 ${items.length}건 → 현재 유효 매트 ${out.length}건 / 업체 ${new Set(out.map(r => r.bizno)).size}곳`);
         return out;
     }
 
+    function loadCache() {
+        try {
+            const raw = localStorage.getItem(CACHE_KEY);
+            if (!raw) return null;
+            const o = JSON.parse(raw);
+            return (o && Array.isArray(o.items) && o.items.length) ? o : null;
+        } catch (e) { return null; }
+    }
+    function showStamp(ts) {
+        const d = new Date(ts);
+        $id('pcStamp').textContent = `등록가 기준 ${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} 갱신 · 현재 유효한 계약만`;
+    }
+    function showEmpty(msg) {
+        $id('pcSummary').innerHTML = `<div class="pc-empty">${esc(msg)}</div>`;
+        $id('pcTableWrap').innerHTML = '';
+        $id('pcChartWrap').classList.add('hidden');
+    }
+
     function populateFilters() {
-        const years = [...new Set(recs.map(r => r.year))].filter(Boolean).sort().reverse();
-        const ySel = $id('pcYear');
-        ySel.innerHTML = years.map(y => `<option value="${y}">${y}년</option>`).join('') + '<option value="all">전체</option>';
-        if (years.length) ySel.value = years[0];
+        const fill = (id, vals, fmt, all) => {
+            const sel = $id(id), prev = sel.value;
+            sel.innerHTML = (all ? `<option value="all">${all}</option>` : '')
+                + vals.map(v => `<option value="${esc(String(v))}">${esc(fmt(v))}</option>`).join('');
+            if (prev && [...sel.options].some(o => o.value === prev)) sel.value = prev;
+        };
+        // ⚠️ 두께·폭은 '전체' 없이 반드시 고정한다. 단가가 원/m이라 폭이 다르면 비교 자체가 성립 안 됨
+        //    (600mm 17,500원과 2000mm 45,000원을 한 줄로 세우면 폭 작은 제품이 싼 것처럼 보인다).
+        fill('pcThickness', [...new Set(reg.map(r => r.thickness))].sort((a, b) => a - b), t => t + 't', null);
+        fill('pcWidth', [...new Set(reg.map(r => r.width))].sort((a, b) => a - b), w => w + 'mm', null);
+        fill('pcType', [...new Set(reg.map(r => r.type))].sort(), t => t, '전체');
 
-        const ths = [...new Set(recs.map(r => r.thickness))].sort((a, b) => a - b);
-        const tSel = $id('pcThickness');
-        tSel.innerHTML = ths.map(t => `<option value="${t}">${t}t</option>`).join('');
-        const cnt = {};
-        recs.filter(r => r.year === ySel.value).forEach(r => { cnt[r.thickness] = (cnt[r.thickness] || 0) + 1; });
-        const best = Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a])[0];
-        if (best) tSel.value = best;                                // 기본 = 표본 최다 두께
-
-        // 폭 — ㎡ 환산으로 폭이 달라도 비교되지만, 폭이 클수록 ㎡단가가 싼 경향이 실제로 있어
-        // (2025·30t 실측: 600mm 28,333원 → 1500mm 25,333원 → 2000mm 24,500원)
-        // 폭 구성이 다른 업체끼리는 불리/유리가 갈린다. 고정해서 볼 수 있게 필터 제공(기본 전체).
-        const ws = [...new Set(recs.map(r => r.width))].sort((a, b) => a - b);
-        $id('pcWidth').innerHTML = '<option value="all">전체</option>'
-            + ws.map(w => `<option value="${w}">${w}mm</option>`).join('');
-
-        const types = [...new Set(recs.map(r => r.type))].filter(t => t && t !== '미상').sort();
-        $id('pcType').innerHTML = '<option value="all">전체</option>'
-            + types.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('')
-            + '<option value="미상">미상(종류 미표기)</option>';
+        // 최초 1회만 기본값 지정 = 표본이 가장 많은 조합
+        if (!$id('pcThickness').dataset.touched) {
+            const top = (keyFn) => {
+                const c = {}; reg.forEach(r => { c[keyFn(r)] = (c[keyFn(r)] || 0) + 1; });
+                return Object.keys(c).sort((a, b) => c[b] - c[a])[0];
+            };
+            const t = top(r => r.thickness); if (t) $id('pcThickness').value = t;
+            const w = top(r => r.width); if (w) $id('pcWidth').value = w;
+        }
     }
 
     function render() {
-        const year = $id('pcYear').value;
+        if (!reg.length) return;
         const th = $id('pcThickness').value;
         const width = $id('pcWidth').value;
         const type = $id('pcType').value;
+        $id('pcThickness').dataset.touched = '1';
 
-        const g0 = recs.filter(r => (year === 'all' || r.year === year)
-            && String(r.thickness) === String(th)
-            && (width === 'all' || String(r.width) === String(width))
+        const g = reg.filter(r => String(r.thickness) === String(th)
+            && String(r.width) === String(width)
             && (type === 'all' || r.type === type));
 
-        // 오등록 이상치 제거 — 단가칸에 총액이 들어간 레코드가 실제로 존재(수백만 원/㎡).
-        // 시장 중위의 1/5~5배를 벗어나면 제외. 중위 기준이라 절대금액 하드코딩이 아님.
-        const med0 = median(g0.map(r => r.perM2));
-        const g = med0 ? g0.filter(r => r.perM2 >= med0 / 5 && r.perM2 <= med0 * 5) : g0;
-        const dropped = g0.length - g.length;
+        const ctx = `${width}×t${th}mm · ${type === 'all' ? '종류 전체' : type}`;
 
-        const ctx = `${year === 'all' ? '전체 기간' : year + '년'} · ${th}t · ${width === 'all' ? '폭 전체' : width + 'mm'} · ${type === 'all' ? '종류 전체' : type}`;
-
-        if (g.length < 10) {
-            ranking = [];
-            $id('pcSummary').innerHTML = `<div class="pc-empty">${esc(ctx)} — 표본이 ${g.length}건뿐이라 비교하지 않습니다.</div>`;
-            $id('pcTableWrap').innerHTML = '';
-            $id('pcChartWrap').classList.add('hidden');
-            return;
-        }
+        if (g.length < 3) { showEmpty(`${ctx} — 등록 상품이 ${g.length}개뿐이라 비교하지 않습니다.`); return; }
         $id('pcChartWrap').classList.remove('hidden');
 
-        const all = g.map(r => r.perM2);
-        const sorted = [...all].sort((a, b) => a - b);
-        const mktMed = median(all);
+        ranking = g.map(r => {
+            const s = salesByModel.get(r.key) || { amount: 0, count: 0 };
+            return { ...r, dub: r.bizno === DUBALLO_BIZNO, amount: s.amount, count: s.count };
+        }).sort((a, b) => a.price - b.price).map((r, i) => ({ ...r, rank: i + 1 }));
 
-        // 업체별 집계
-        const map = new Map();
-        g.forEach(r => {
-            const key = r.bizno || r.supplier;
-            let c = map.get(key);
-            if (!c) { c = { key, name: r.supplier, dub: isDuballo(r), values: [], amount: 0, recs: [] }; map.set(key, c); }
-            c.values.push(r.perM2); c.amount += r.amount; c.recs.push(r);
-        });
-        ranking = [...map.values()]
-            .filter(c => c.values.length >= MIN_SAMPLES)
-            .map(c => ({ ...c, median: median(c.values), min: Math.min(...c.values), max: Math.max(...c.values), count: c.values.length }))
-            .sort((a, b) => a.median - b.median)
-            .map((c, i) => ({ ...c, rank: i + 1 }));
+        const prices = ranking.map(r => r.price);
+        const mktMed = median(prices);
+        const me = ranking.find(r => r.dub);
 
-        const dubRecs = g.filter(isDuballo);
-        const dubRow = ranking.find(c => c.dub);
-        renderSummary(ctx, g, sorted, mktMed, dubRecs, dubRow, dropped);
+        renderSummary(ctx, mktMed, me, ranking.length);
         renderTable();
-        renderChart(dubRow);
+        renderChart(me, mktMed);
     }
 
-    function renderSummary(ctx, g, sorted, mktMed, dubRecs, dubRow, dropped) {
-        const cards = [];
-        if (dubRecs.length) {
-            const dubMed = median(dubRecs.map(r => r.perM2));
-            const gap = (dubMed / mktMed - 1) * 100;
-            const cheaper = gap < 0;
-            cards.push(card('두발로 중위단가', won(dubMed) + '/㎡', `실거래 ${dubRecs.length}건`, 'text-gray-900'));
-            cards.push(card('시장 중위 대비', (gap > 0 ? '+' : '') + gap.toFixed(1) + '%',
-                `시장 중위 ${won(mktMed)}/㎡`, cheaper ? 'text-blue-600' : 'text-red-600'));
-            cards.push(card('업체 순위',
-                dubRow ? `${dubRow.rank}위 / ${ranking.length}개사` : `표본 ${MIN_SAMPLES}건 미만`,
-                `싼쪽에서 상위 ${percentileOf(sorted, dubMed).toFixed(0)}%`, 'text-gray-900'));
+    function renderSummary(ctx, mktMed, me, n) {
+        const card = (label, value, sub, cls) =>
+            `<div class="pc-card"><div class="pc-card-label">${esc(label)}</div>
+             <div class="pc-card-value ${cls}">${esc(value)}</div>
+             <div class="pc-card-sub">${esc(sub)}</div></div>`;
+        let cards;
+        if (me) {
+            const gap = (me.price / mktMed - 1) * 100;
+            cards = card('두발로 등록가', won(me.price) + '/m', me.model, 'text-gray-900')
+                + card('시장 중위 대비', (gap > 0 ? '+' : '') + gap.toFixed(1) + '%', `시장 중위 ${won(mktMed)}/m`, gap <= 0 ? 'text-blue-600' : 'text-red-600')
+                + card('등록가 순위', `${me.rank}위 / ${n}개 상품`, `누적 판매 ${eok(me.amount)}원 · ${me.count}건`, 'text-gray-900');
         } else {
-            cards.push(card('두발로 중위단가', '실거래 없음', ctx, 'text-gray-400'));
-            cards.push(card('시장 중위단가', won(mktMed) + '/㎡', `거래 ${g.length}건`, 'text-gray-900'));
-            cards.push(card('비교 업체', `${ranking.length}개사`, `${MIN_SAMPLES}건 이상`, 'text-gray-900'));
+            cards = card('두발로 등록가', '해당 규격 없음', ctx, 'text-gray-400')
+                + card('시장 중위', won(mktMed) + '/m', `${n}개 상품`, 'text-gray-900')
+                + card('최저', won(Math.min(...ranking.map(r => r.price))) + '/m', ranking[0].corp, 'text-gray-900');
         }
+        const corps = new Set(ranking.map(r => r.bizno)).size;
         $id('pcSummary').innerHTML =
-            `<div class="pc-ctx">${esc(ctx)} · 시장 전체 ${g.length}건 · 단가는 폭으로 나눈 <strong>원/㎡</strong> 환산값${dropped ? ` · 단가 오등록 ${dropped}건 제외` : ''}</div>
-             <div class="pc-cards">${cards.join('')}</div>`;
+            `<div class="pc-ctx">${esc(ctx)} · 등록 ${n}개 상품 / ${corps}개사 · <strong>종합쇼핑몰 등록가(원/m)</strong> 기준, 누적 판매액·거래건수는 실거래(물품식별번호 조인)</div>
+             <div class="pc-cards">${cards}</div>`;
     }
-    const card = (label, value, sub, cls) =>
-        `<div class="pc-card"><div class="pc-card-label">${esc(label)}</div>
-         <div class="pc-card-value ${cls}">${esc(value)}</div>
-         <div class="pc-card-sub">${esc(sub)}</div></div>`;
 
     function renderTable() {
-        if (!ranking.length) { $id('pcTableWrap').innerHTML = '<div class="pc-empty">비교 가능한 업체가 없습니다.</div>'; return; }
         const rows = ranking.map(c => `
             <tr data-key="${esc(c.key)}"${c.dub ? ' class="pc-me"' : ''}>
                 <td class="pc-rank">${c.rank}</td>
-                <td>${c.dub ? '★ ' : ''}${esc(c.name)}</td>
-                <td class="pc-num pc-strong">${won(c.median)}</td>
-                <td class="pc-num pc-muted">${won(c.min)} ~ ${won(c.max)}</td>
-                <td class="pc-num">${CommonUtils.formatNumber(c.count)}</td>
+                <td>${c.dub ? '★ ' : ''}${esc(c.corp)}</td>
+                <td class="pc-muted">${esc(c.model)}</td>
+                <td class="pc-num pc-strong">${won(c.price)}</td>
+                <td class="pc-num">${c.amount ? eok(c.amount) + '원' : '-'}</td>
+                <td class="pc-num">${c.count ? CommonUtils.formatNumber(c.count) : '-'}</td>
             </tr>`).join('');
         $id('pcTableWrap').innerHTML = `
             <table class="pc-table">
                 <thead><tr>
-                    <th class="pc-rank">순위</th><th>업체</th>
-                    <th class="pc-num">중위단가(원/㎡)</th><th class="pc-num">최저 ~ 최고</th><th class="pc-num">거래건수</th>
+                    <th class="pc-rank">순위</th><th>업체</th><th>모델</th>
+                    <th class="pc-num">등록가(원/m)</th><th class="pc-num">누적 판매액</th><th class="pc-num">거래건수</th>
                 </tr></thead>
                 <tbody>${rows}</tbody>
             </table>
-            <div class="pc-note">싼 순. 거래 ${MIN_SAMPLES}건 이상인 업체만 · 행을 클릭하면 실거래 내역을 봅니다.</div>`;
+            <div class="pc-note">등록가 싼 순 · 누적 판매액·거래건수는 해당 모델의 실거래 전체 기간 합계 · 행 클릭 시 그 업체의 전 규격 등록가</div>`;
     }
 
-    // 업체별 중위단가 분포 — 두발로가 속한 구간을 강조
-    function renderChart(dubRow) {
-        const meds = ranking.map(c => c.median);
-        if (!meds.length) return;
-        const lo = Math.min(...meds), hi = Math.max(...meds);
-        const step = Math.max(1000, Math.ceil((hi - lo) / 18 / 1000) * 1000);
+    function renderChart(me, mktMed) {
+        const prices = ranking.map(r => r.price);
+        const lo = Math.min(...prices), hi = Math.max(...prices);
+        const step = Math.max(500, Math.ceil((hi - lo) / 18 / 500) * 500);
         const base = Math.floor(lo / step) * step;
-        const bins = [];
-        for (let x = base; x <= hi; x += step) bins.push(x);
+        const bins = []; for (let x = base; x <= hi; x += step) bins.push(x);
         const counts = bins.map(() => 0);
-        meds.forEach(v => { const i = Math.min(bins.length - 1, Math.floor((v - base) / step)); counts[i]++; });
-        const dubBin = dubRow ? Math.min(bins.length - 1, Math.floor((dubRow.median - base) / step)) : -1;
+        prices.forEach(v => { counts[Math.min(bins.length - 1, Math.floor((v - base) / step))]++; });
+        const meBin = me ? Math.min(bins.length - 1, Math.floor((me.price - base) / step)) : -1;
 
-        const cv = $id('pcChart');
         if (chart) chart.destroy();
-        chart = new Chart(cv, {
+        chart = new Chart($id('pcChart'), {
             type: 'bar',
             data: {
                 labels: bins.map(b => CommonUtils.formatNumber(b)),
-                datasets: [{
-                    label: '업체 수',
-                    data: counts,
-                    backgroundColor: counts.map((_, i) => i === dubBin ? '#2563eb' : '#cbd5e1'),
-                    borderWidth: 0
-                }]
+                datasets: [{ label: '업체 수', data: counts, borderWidth: 0,
+                    backgroundColor: counts.map((_, i) => i === meBin ? '#2563eb' : '#cbd5e1') }]
             },
             options: {
                 responsive: true, maintainAspectRatio: false,
                 plugins: {
                     legend: { display: false },
-                    tooltip: {
-                        callbacks: {
-                            title: items => `${CommonUtils.formatNumber(bins[items[0].dataIndex])} ~ ${CommonUtils.formatNumber(bins[items[0].dataIndex] + step)}원/㎡`,
-                            label: item => `${item.parsed.y}개사${item.dataIndex === dubBin ? ' (두발로 포함)' : ''}`
-                        }
-                    }
+                    tooltip: { callbacks: {
+                        title: it => `${CommonUtils.formatNumber(bins[it[0].dataIndex])} ~ ${CommonUtils.formatNumber(bins[it[0].dataIndex] + step)}원/m`,
+                        label: it => `${it.parsed.y}개사${it.dataIndex === meBin ? ' (두발로 포함)' : ''}`
+                    } }
                 },
                 scales: {
-                    x: { title: { display: true, text: '중위단가 구간 (원/㎡)' }, grid: { display: false } },
+                    x: { title: { display: true, text: '등록가 구간 (원/m)' }, grid: { display: false } },
                     y: { title: { display: true, text: '업체 수' }, beginAtZero: true, ticks: { precision: 0 } }
                 }
             }
@@ -1855,26 +1891,23 @@ console.log('%c[market-analysis.js v=20260721f — 시장 분석 통합(수요�
         if (!tr) return;
         const c = ranking.find(x => x.key === tr.dataset.key);
         if (!c) return;
-        const lines = [...c.recs].sort((a, b) => a.perM2 - b.perM2).map(r => `
-            <tr>
-                <td>${esc(r.date)}</td>
-                <td>${esc(r.model)}</td>
-                <td>${r.width}×t${r.thickness}mm</td>
-                <td>${esc(r.type)}</td>
-                <td style="text-align:right">${CommonUtils.formatNumber(r.qty)}</td>
-                <td style="text-align:right">${won(r.unitPrice)}</td>
-                <td style="text-align:right;font-weight:600">${won(r.perM2)}</td>
-                <td>${esc(r.agency)}</td>
-            </tr>`).join('');
-        CommonUtils.showModal(`${c.name} — 실거래 ${c.count}건 · 중위 ${won(c.median)}/㎡`, `
+        const mine = reg.filter(r => r.bizno === c.bizno)
+            .sort((a, b) => a.thickness - b.thickness || a.width - b.width);
+        const lines = mine.map(r => {
+            const s = salesByModel.get(r.key) || { amount: 0, count: 0 };
+            return `<tr${r.key === c.key ? ' style="background:#eff6ff;font-weight:600"' : ''}>
+                <td>${esc(r.model)}</td><td>${r.width}×t${r.thickness}mm</td><td>${esc(r.type)}</td>
+                <td class="pc-muted">${esc(r.idnt)}</td>
+                <td style="text-align:right">${won(r.price)}</td>
+                <td style="text-align:right">${s.amount ? eok(s.amount) + '원' : '-'}</td>
+                <td style="text-align:right">${s.count || '-'}</td></tr>`;
+        }).join('');
+        CommonUtils.showModal(`${c.corp} — 등록 ${mine.length}종 · 계약 ${c.bgn.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3')}~${c.end.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3')}`, `
             <table class="pc-modal-table">
-                <thead><tr>
-                    <th>일자</th><th>모델</th><th>규격</th><th>종류</th>
-                    <th style="text-align:right">수량</th><th style="text-align:right">단가(원/m)</th>
-                    <th style="text-align:right">원/㎡</th><th>수요기관</th>
-                </tr></thead>
+                <thead><tr><th>모델</th><th>규격</th><th>종류</th><th>물품식별번호</th>
+                <th style="text-align:right">등록가(원/m)</th><th style="text-align:right">누적 판매액</th><th style="text-align:right">거래건수</th></tr></thead>
                 <tbody>${lines}</tbody>
-            </table>`, { width: '980px' });
+            </table>`, { width: '860px' });
     }
 
     window.__mPrice = { init };
