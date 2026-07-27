@@ -1567,13 +1567,317 @@ console.log('%c[market-analysis.js v=20260721f — 시장 분석 통합(수요�
 })();
 
 /* =========================================================================
+ * 탭 5: 가격 경쟁력 — 보행매트 실거래 단가로 두발로의 시장 내 가격 위치 산출
+ *
+ *  ⚠️ 핵심: 계약납품단가의 단위는 '원/m'이지 '원/㎡'가 아니다.
+ *     폭이 600~5000mm로 제각각이라 환산 없이 비교하면 결과가 완전히 틀린다.
+ *     원/㎡ = 계약납품단가 ÷ (폭mm / 1000)
+ *
+ *  규격 포맷: "세부품명, 업체단축명, 모델, {폭}×t{두께}mm[, {종류}]"
+ *     예) 보행매트, 두발로, DB-3510, 1000×t35mm, 기본형
+ *  - (부품)고정핀은 단위가 '개'라 ㎡ 비교가 불가능 → 제외
+ *  - 종류 표기가 없는 레코드가 많아, 표기 있는 레코드로 모델→종류를 학습해 보완
+ *    ('빈 값=기본형'으로 가정하면 DBM-*(미끄럼방지형)이 기본형으로 오분류됨)
+ *  - 오등록 이상치(수백만 원/㎡)가 존재 → 평균 금지, 중위값(median) 기준
+ * ========================================================================= */
+(function () {
+    const DUBALLO_BIZNO = '7698601460';        // 두발로 주식회사 (769-86-01460)
+    const TARGET_PRODUCT = '보행매트';
+    const MIN_SAMPLES = 5;                     // 업체 순위표 편입 최소 거래 건수(잡음 제거)
+    const SPEC_RE = /^(\d+)\s*[×xX]\s*t(\d+)\s*mm$/;
+
+    let root, hub;
+    let recs = [];          // 파싱·환산 완료 레코드
+    let ranking = [];       // 현재 필터의 업체별 집계(행 클릭 조회용)
+    let chart = null;
+
+    const $id = id => root.querySelector('#' + id);
+    const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const num = v => Number(CommonUtils.parseSignedAmount(v)) || 0;
+    const won = n => CommonUtils.formatNumber(Math.round(n)) + '원';
+    const isDuballo = r => r.bizno ? r.bizno === DUBALLO_BIZNO : /^두발로/.test(r.supplier);
+
+    function median(arr) {
+        if (!arr.length) return 0;
+        const s = [...arr].sort((a, b) => a - b);
+        const n = s.length;
+        return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2;
+    }
+    function percentileOf(sorted, v) {          // v보다 싼 거래의 비율(%)
+        if (!sorted.length) return 0;
+        let lo = 0, hi = sorted.length;
+        while (lo < hi) { const mid = (lo + hi) >> 1; if (sorted[mid] < v) lo = mid + 1; else hi = mid; }
+        return lo / sorted.length * 100;
+    }
+
+    function init(rootEl, rawData, hubRef) {
+        root = rootEl; hub = hubRef;
+        try {
+            recs = buildRecords(rawData);
+            if (!recs.length) {
+                $id('pcSummary').innerHTML = '<div class="pc-empty">보행매트 실거래 데이터를 찾지 못했습니다.</div>';
+                return;
+            }
+            populateFilters();
+            $id('pcYear').addEventListener('change', render);
+            $id('pcThickness').addEventListener('change', render);
+            $id('pcType').addEventListener('change', render);
+            $id('pcPrint').addEventListener('click', () => window.print());
+            $id('pcTableWrap').addEventListener('click', onRowClick);
+            render();
+        } catch (error) {
+            console.error('가격 경쟁력 초기화 실패:', error);
+            CommonUtils.showAlert(`가격 경쟁력 오류: ${error.message}`, 'error');
+        }
+    }
+
+    const splitIdent = s => String(s || '').split(',').map(x => x.trim()).filter(Boolean);
+
+    // rawData(dedup 완료) → 보행매트 매트류만 원/㎡ 환산해 레코드화
+    function buildRecords(rawData) {
+        const rows = (rawData || []).filter(r => (r['세부품명'] || '').trim() === TARGET_PRODUCT);
+
+        // 1) 종류 표기가 있는 레코드로 모델→종류 학습 (표기 누락분 보완용)
+        const modelType = new Map();
+        rows.forEach(r => {
+            const p = splitIdent(r['물품식별명']);
+            if (p.length >= 5 && SPEC_RE.test(p[3])) modelType.set(p[1] + '|' + p[2], p[4]);
+        });
+
+        const out = [];
+        let parts = 0, failed = 0;
+        rows.forEach(r => {
+            const raw = (r['물품식별명'] || '').trim();
+            if (raw.includes('(부품)')) { parts++; return; }        // 고정핀 등 = 단위 '개'
+            const p = splitIdent(raw);
+            const m = p.length >= 4 ? String(p[3]).match(SPEC_RE) : null;
+            if (!m) { failed++; return; }
+            const width = Number(m[1]);
+            const unitPrice = num(r['계약납품단가']);
+            if (!width || unitPrice <= 0) { failed++; return; }
+            out.push({
+                supplier: (r['업체'] || '').trim(),
+                bizno: String(r['업체사업자등록번호'] || '').replace(/[^\d]/g, ''),
+                agency: (r['수요기관명'] || '').trim(),
+                model: p[2],
+                width,
+                thickness: Number(m[2]),
+                type: p[4] || modelType.get(p[1] + '|' + p[2]) || '미상',
+                unitPrice,
+                perM2: unitPrice / (width / 1000),
+                qty: num(r['계약납품수량']),
+                amount: num(r['공급금액']),
+                date: (r['기준일자'] || '').trim(),
+                year: String(r['기준일자'] || '').slice(0, 4),
+                fullProductName: raw
+            });
+        });
+        const rate = out.length + failed ? (failed / (out.length + failed) * 100).toFixed(2) : '0';
+        console.log(`[가격 경쟁력] 보행매트 ${rows.length}행 → 매트 ${out.length}건 (부품 제외 ${parts} · 파싱실패 ${failed}, 실패율 ${rate}%)`);
+        return out;
+    }
+
+    function populateFilters() {
+        const years = [...new Set(recs.map(r => r.year))].filter(Boolean).sort().reverse();
+        const ySel = $id('pcYear');
+        ySel.innerHTML = years.map(y => `<option value="${y}">${y}년</option>`).join('') + '<option value="all">전체</option>';
+        if (years.length) ySel.value = years[0];
+
+        const ths = [...new Set(recs.map(r => r.thickness))].sort((a, b) => a - b);
+        const tSel = $id('pcThickness');
+        tSel.innerHTML = ths.map(t => `<option value="${t}">${t}t</option>`).join('');
+        const cnt = {};
+        recs.filter(r => r.year === ySel.value).forEach(r => { cnt[r.thickness] = (cnt[r.thickness] || 0) + 1; });
+        const best = Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a])[0];
+        if (best) tSel.value = best;                                // 기본 = 표본 최다 두께
+
+        const types = [...new Set(recs.map(r => r.type))].filter(t => t && t !== '미상').sort();
+        $id('pcType').innerHTML = '<option value="all">전체</option>'
+            + types.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('')
+            + '<option value="미상">미상(종류 미표기)</option>';
+    }
+
+    function render() {
+        const year = $id('pcYear').value;
+        const th = $id('pcThickness').value;
+        const type = $id('pcType').value;
+
+        const g0 = recs.filter(r => (year === 'all' || r.year === year)
+            && String(r.thickness) === String(th)
+            && (type === 'all' || r.type === type));
+
+        // 오등록 이상치 제거 — 단가칸에 총액이 들어간 레코드가 실제로 존재(수백만 원/㎡).
+        // 시장 중위의 1/5~5배를 벗어나면 제외. 중위 기준이라 절대금액 하드코딩이 아님.
+        const med0 = median(g0.map(r => r.perM2));
+        const g = med0 ? g0.filter(r => r.perM2 >= med0 / 5 && r.perM2 <= med0 * 5) : g0;
+        const dropped = g0.length - g.length;
+
+        const ctx = `${year === 'all' ? '전체 기간' : year + '년'} · ${th}t · ${type === 'all' ? '종류 전체' : type}`;
+
+        if (g.length < 10) {
+            ranking = [];
+            $id('pcSummary').innerHTML = `<div class="pc-empty">${esc(ctx)} — 표본이 ${g.length}건뿐이라 비교하지 않습니다.</div>`;
+            $id('pcTableWrap').innerHTML = '';
+            $id('pcChartWrap').classList.add('hidden');
+            return;
+        }
+        $id('pcChartWrap').classList.remove('hidden');
+
+        const all = g.map(r => r.perM2);
+        const sorted = [...all].sort((a, b) => a - b);
+        const mktMed = median(all);
+
+        // 업체별 집계
+        const map = new Map();
+        g.forEach(r => {
+            const key = r.bizno || r.supplier;
+            let c = map.get(key);
+            if (!c) { c = { key, name: r.supplier, dub: isDuballo(r), values: [], amount: 0, recs: [] }; map.set(key, c); }
+            c.values.push(r.perM2); c.amount += r.amount; c.recs.push(r);
+        });
+        ranking = [...map.values()]
+            .filter(c => c.values.length >= MIN_SAMPLES)
+            .map(c => ({ ...c, median: median(c.values), min: Math.min(...c.values), max: Math.max(...c.values), count: c.values.length }))
+            .sort((a, b) => a.median - b.median)
+            .map((c, i) => ({ ...c, rank: i + 1 }));
+
+        const dubRecs = g.filter(isDuballo);
+        const dubRow = ranking.find(c => c.dub);
+        renderSummary(ctx, g, sorted, mktMed, dubRecs, dubRow, dropped);
+        renderTable();
+        renderChart(dubRow);
+    }
+
+    function renderSummary(ctx, g, sorted, mktMed, dubRecs, dubRow, dropped) {
+        const cards = [];
+        if (dubRecs.length) {
+            const dubMed = median(dubRecs.map(r => r.perM2));
+            const gap = (dubMed / mktMed - 1) * 100;
+            const cheaper = gap < 0;
+            cards.push(card('두발로 중위단가', won(dubMed) + '/㎡', `실거래 ${dubRecs.length}건`, 'text-gray-900'));
+            cards.push(card('시장 중위 대비', (gap > 0 ? '+' : '') + gap.toFixed(1) + '%',
+                `시장 중위 ${won(mktMed)}/㎡`, cheaper ? 'text-blue-600' : 'text-red-600'));
+            cards.push(card('업체 순위',
+                dubRow ? `${dubRow.rank}위 / ${ranking.length}개사` : `표본 ${MIN_SAMPLES}건 미만`,
+                `싼쪽에서 상위 ${percentileOf(sorted, dubMed).toFixed(0)}%`, 'text-gray-900'));
+        } else {
+            cards.push(card('두발로 중위단가', '실거래 없음', ctx, 'text-gray-400'));
+            cards.push(card('시장 중위단가', won(mktMed) + '/㎡', `거래 ${g.length}건`, 'text-gray-900'));
+            cards.push(card('비교 업체', `${ranking.length}개사`, `${MIN_SAMPLES}건 이상`, 'text-gray-900'));
+        }
+        $id('pcSummary').innerHTML =
+            `<div class="pc-ctx">${esc(ctx)} · 시장 전체 ${g.length}건 · 단가는 폭으로 나눈 <strong>원/㎡</strong> 환산값${dropped ? ` · 단가 오등록 ${dropped}건 제외` : ''}</div>
+             <div class="pc-cards">${cards.join('')}</div>`;
+    }
+    const card = (label, value, sub, cls) =>
+        `<div class="pc-card"><div class="pc-card-label">${esc(label)}</div>
+         <div class="pc-card-value ${cls}">${esc(value)}</div>
+         <div class="pc-card-sub">${esc(sub)}</div></div>`;
+
+    function renderTable() {
+        if (!ranking.length) { $id('pcTableWrap').innerHTML = '<div class="pc-empty">비교 가능한 업체가 없습니다.</div>'; return; }
+        const rows = ranking.map(c => `
+            <tr data-key="${esc(c.key)}"${c.dub ? ' class="pc-me"' : ''}>
+                <td class="pc-rank">${c.rank}</td>
+                <td>${c.dub ? '★ ' : ''}${esc(c.name)}</td>
+                <td class="pc-num pc-strong">${won(c.median)}</td>
+                <td class="pc-num pc-muted">${won(c.min)} ~ ${won(c.max)}</td>
+                <td class="pc-num">${CommonUtils.formatNumber(c.count)}</td>
+            </tr>`).join('');
+        $id('pcTableWrap').innerHTML = `
+            <table class="pc-table">
+                <thead><tr>
+                    <th class="pc-rank">순위</th><th>업체</th>
+                    <th class="pc-num">중위단가(원/㎡)</th><th class="pc-num">최저 ~ 최고</th><th class="pc-num">거래건수</th>
+                </tr></thead>
+                <tbody>${rows}</tbody>
+            </table>
+            <div class="pc-note">싼 순. 거래 ${MIN_SAMPLES}건 이상인 업체만 · 행을 클릭하면 실거래 내역을 봅니다.</div>`;
+    }
+
+    // 업체별 중위단가 분포 — 두발로가 속한 구간을 강조
+    function renderChart(dubRow) {
+        const meds = ranking.map(c => c.median);
+        if (!meds.length) return;
+        const lo = Math.min(...meds), hi = Math.max(...meds);
+        const step = Math.max(1000, Math.ceil((hi - lo) / 18 / 1000) * 1000);
+        const base = Math.floor(lo / step) * step;
+        const bins = [];
+        for (let x = base; x <= hi; x += step) bins.push(x);
+        const counts = bins.map(() => 0);
+        meds.forEach(v => { const i = Math.min(bins.length - 1, Math.floor((v - base) / step)); counts[i]++; });
+        const dubBin = dubRow ? Math.min(bins.length - 1, Math.floor((dubRow.median - base) / step)) : -1;
+
+        const cv = $id('pcChart');
+        if (chart) chart.destroy();
+        chart = new Chart(cv, {
+            type: 'bar',
+            data: {
+                labels: bins.map(b => CommonUtils.formatNumber(b)),
+                datasets: [{
+                    label: '업체 수',
+                    data: counts,
+                    backgroundColor: counts.map((_, i) => i === dubBin ? '#2563eb' : '#cbd5e1'),
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            title: items => `${CommonUtils.formatNumber(bins[items[0].dataIndex])} ~ ${CommonUtils.formatNumber(bins[items[0].dataIndex] + step)}원/㎡`,
+                            label: item => `${item.parsed.y}개사${item.dataIndex === dubBin ? ' (두발로 포함)' : ''}`
+                        }
+                    }
+                },
+                scales: {
+                    x: { title: { display: true, text: '중위단가 구간 (원/㎡)' }, grid: { display: false } },
+                    y: { title: { display: true, text: '업체 수' }, beginAtZero: true, ticks: { precision: 0 } }
+                }
+            }
+        });
+    }
+
+    function onRowClick(e) {
+        const tr = e.target.closest('tr[data-key]');
+        if (!tr) return;
+        const c = ranking.find(x => x.key === tr.dataset.key);
+        if (!c) return;
+        const lines = [...c.recs].sort((a, b) => a.perM2 - b.perM2).map(r => `
+            <tr>
+                <td>${esc(r.date)}</td>
+                <td>${esc(r.model)}</td>
+                <td>${r.width}×t${r.thickness}mm</td>
+                <td>${esc(r.type)}</td>
+                <td style="text-align:right">${CommonUtils.formatNumber(r.qty)}</td>
+                <td style="text-align:right">${won(r.unitPrice)}</td>
+                <td style="text-align:right;font-weight:600">${won(r.perM2)}</td>
+                <td>${esc(r.agency)}</td>
+            </tr>`).join('');
+        CommonUtils.showModal(`${c.name} — 실거래 ${c.count}건 · 중위 ${won(c.median)}/㎡`, `
+            <table class="pc-modal-table">
+                <thead><tr>
+                    <th>일자</th><th>모델</th><th>규격</th><th>종류</th>
+                    <th style="text-align:right">수량</th><th style="text-align:right">단가(원/m)</th>
+                    <th style="text-align:right">원/㎡</th><th>수요기관</th>
+                </tr></thead>
+                <tbody>${lines}</tbody>
+            </table>`, { width: '980px' });
+    }
+
+    window.__mPrice = { init };
+})();
+
+/* =========================================================================
  * 오케스트레이터 — 상위 탭 전환 + B소스 1회 로드 + 지연 init + cross-link 허브
  * ========================================================================= */
 (function () {
     const Hub = window.MarketHub = {};
     let rawProcurement = null;
     let dataPromise = null;
-    const loaded = { agencyTab: false, supplierTab: false, trendTab: false, weeklyOrderTab: false };
+    const loaded = { agencyTab: false, supplierTab: false, trendTab: false, weeklyOrderTab: false, priceTab: false };
 
     function ensureData() {
         if (!dataPromise) {
@@ -1603,7 +1907,7 @@ console.log('%c[market-analysis.js v=20260721f — 시장 분석 통합(수요�
             b.classList.toggle('border-transparent', !on);
             b.classList.toggle('text-gray-500', !on);
         });
-        ['agencyTab', 'supplierTab', 'trendTab', 'weeklyOrderTab'].forEach(id => {
+        ['agencyTab', 'supplierTab', 'trendTab', 'weeklyOrderTab', 'priceTab'].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.classList.toggle('hidden', id !== tab);
         });
@@ -1623,6 +1927,7 @@ console.log('%c[market-analysis.js v=20260721f — 시장 분석 통합(수요�
             else if (tab === 'supplierTab') await window.__mSupplier.init(root, rawProcurement, Hub);
             else if (tab === 'trendTab') window.__mTrend.init(root, rawProcurement, Hub);
             else if (tab === 'weeklyOrderTab') window.__mWeekly.init(root, rawProcurement, Hub);
+            else if (tab === 'priceTab') window.__mPrice.init(root, rawProcurement, Hub);
             loaded[tab] = true;
         }
     }
