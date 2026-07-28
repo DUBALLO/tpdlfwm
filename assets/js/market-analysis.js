@@ -3,7 +3,7 @@
 // 설계: 각 탭 = 독립 IIFE(전역/함수명 충돌 0), DOM은 자기 탭 root로 스코프($id).
 //       B소스(loadAllProcurementData)는 오케스트레이터가 1회 로드해 3탭 공유.
 //       트렌드는 두발로 필터 제거 → 시장 전체 추이. cross-link 업체↔수요기관.
-console.log('%c[market-analysis.js v=20260728a — 시장 분석 5탭(수요기관/업체/트렌드/월간주문내역/가격 경쟁력: 연도 선택·정렬 토글), B소스 1회 로드]', 'color:#0ea5e9; font-weight:bold');
+console.log('%c[market-analysis.js v=20260728b — 시장 분석 5탭(가격 경쟁력: 3품목 확장·연도 선택·정렬), B소스 1회 로드]', 'color:#0ea5e9; font-weight:bold');
 
 /* =========================================================================
  * IIFE 1 — 수요기관 분석 (원 agency-purchase.js)
@@ -1572,32 +1572,101 @@ console.log('%c[market-analysis.js v=20260728a — 시장 분석 5탭(수요기�
  *  왜 등록가인가: 실거래가는 2단계경쟁·수의계약 할인이 섞여 같은 제품도 크게 널뛴다.
  *  수요기관이 쇼핑몰에서 비교하며 보는 값이자 우리가 직접 조정하는 레버는 '등록가'다.
  *
- *  단가는 원/m 그대로 쓴다(㎡ 환산 없음). 조달은 m 단위로 계약·거래되고,
- *  규격이 같으면 폭도 같으므로 원/m 직접 비교가 정확하다.
- *
- *  데이터 2종을 모델코드로 조인:
+ *  데이터 2종을 물품식별번호로 조인:
  *   - 등록가  /api/mall (getShoppingMallPrdctInfoList) — 버튼으로 온디맨드 갱신
- *   - 실거래  이미 4탭이 공유하는 조달 데이터 → 누적 판매액·거래건수
+ *   - 실거래  이미 4탭이 공유하는 조달 데이터 → 판매액·거래건수
  *
  *  ⚠️ 등록가 API 주의: 품목 필터는 '세부품명 한글 문자열'(dtilPrdctClsfcNoNm)이다.
  *     숫자 코드(dtilPrdctClsfcNo)는 조용히 무시된다(실거래 API와 반대).
  *     조회 기간은 1년 초과 시 거부 → 연도별로 나눠 호출한다.
+ *
+ *  ⚠️ 규격 문자열 포맷도, 비교 축도 품목마다 다르다(2026-07-28 전수 실측 + 형우 지정).
+ *     그래서 품목별 어댑터(PRODUCTS)로 분리했다. 정규식 하나로 셋을 받으면 조용히 깨진다.
+ *
+ *       보행매트  '1000×t30mm, 기본형'            원/m   축 = 폭·두께·종류
+ *       식생매트  't2mm, 저강도형'                 원/㎡  축 = 종류(강도등급)   ← 두께는 참고 컬럼
+ *       논슬립    '1000×70×t2.6mm, 앞발길이25mm'   원/m   축 = 폭·용도          ← 두께·앞발은 참고 컬럼
+ *
+ *     논슬립 축 근거(형우): 앞발이 있으면 계단용, 없으면 평판용. 규격의 핵심 식별자는 폭(70)이고
+ *     앞의 1000은 판매 단위 길이라 비교에 쓰지 않는다(단가가 원/m이라 어차피 상쇄된다).
+ *     재질(세라믹·알미늄·텅스텐·스테인리스)은 API 33개 필드 어디에도 없어 식별 불가.
  * ========================================================================= */
 (function () {
     const DUBALLO_BIZNO = '7698601460';        // 두발로 주식회사 (769-86-01460)
-    const TARGET_PRODUCT = '보행매트';
-    const CACHE_KEY = 'mallRegPrices_v1';
+    const CACHE_KEY = 'mallRegPrices_v2';      // v1(보행매트 단일) → v2(품목별)
     const YEARS_BACK = 2;                      // 올해 포함 3개년 (계약기간이 1~2년이라 충분)
-    const SPEC_RE = /^(\d+)\s*[×xX]\s*t(\d+)\s*mm$/;
+    const MIN_GROUP = 3;                       // 이보다 적으면 비교하지 않는다
+
+    const numFmt = n => (Math.round(Number(n) * 100) / 100).toString();   // 두께 2.6t 처럼 소수 유지
+
+    // ---- 품목별 어댑터 ----
+    //  filters : 화면에 띄울 필터 축과 라벨 (여기 없는 축은 셀렉트가 숨겨진다)
+    //  detail  : 축이 아닌 참고 규격을 보여줄 표 컬럼
+    //  parse   : 규격 문자열 조각 → { width, thickness, type, foot }
+    const PRODUCTS = {
+        '보행매트': {
+            unit: 'm', priceLabel: '원/m',
+            filters: { thickness: '두께', width: '폭', type: '종류' },
+            detail: { label: '종류', key: 'type', type: 'string', get: r => r.type },
+            parse(parts) {
+                const m = String(parts[3] || '').match(/^([\d.]+)\s*[×xX]\s*t([\d.]+)\s*mm$/);
+                if (!m) return null;
+                return { width: Number(m[1]), thickness: Number(m[2]), type: parts[4] || '(미표기)' };
+            },
+            defaults: { thickness: 30, width: 1000, type: '기본형' }   // 형우 지정 (보행매트에 '일반형'은 없고 '기본형')
+        },
+        '식생매트': {
+            unit: '㎡', priceLabel: '원/㎡',
+            filters: { type: '종류' },
+            detail: { label: '두께', key: 'thickness', type: 'number', get: r => 't' + numFmt(r.thickness) + 'mm' },
+            parse(parts) {
+                // 't2mm' / '1000×1000×300mm' / '1000×1000×t300mm' — 맨 뒤 수치가 두께(매트리스형은 높이)
+                const m = String(parts[3] || '').match(/(?:^|[×xX])\s*t?([\d.]+)\s*mm$/);
+                if (!m) return null;
+                return { width: null, thickness: Number(m[1]), type: parts[4] || '(미표기)' };
+            },
+            defaults: { type: '일반형' }
+        },
+        '논슬립': {
+            unit: 'm', priceLabel: '원/m',
+            // 재질(세라믹·알미늄·텅스텐·스테인리스)이 데이터에 없어 축으로 못 쓴다.
+            // 그래서 형우 지정대로 '앞발 유무'만 축으로 두고, 폭·두께는 참고 컬럼으로 보여준다.
+            filters: { type: '용도' },
+            detail: {
+                label: '폭·두께', key: 'width', type: 'number',
+                get: r => numFmt(r.width) + '×t' + numFmt(r.thickness) + 'mm' + (r.foot != null ? ` · 앞발 ${numFmt(r.foot)}mm` : '')
+            },
+            parse(parts) {
+                // 길이×폭×t두께mm. 길이·폭 순서가 뒤바뀐 등록분이 있어(80.2×1000×t3.25mm)
+                // 두 수 중 작은 쪽을 폭으로 본다.
+                const m = String(parts[3] || '').match(/^([\d.]+)\s*[×xX]\s*([\d.]+)\s*[×xX]\s*t?([\d.]+)\s*mm$/);
+                if (!m) return null;
+                const a = Number(m[1]), b = Number(m[2]);
+                const foot = String(parts[4] || '').match(/앞발길이\s*([\d.]+)\s*mm/);
+                return {
+                    width: Math.min(a, b),
+                    thickness: Number(m[3]),
+                    type: foot ? '계단용' : '평판용',
+                    foot: foot ? Number(foot[1]) : null
+                };
+            },
+            defaults: {}
+        }
+    };
+    const PRODUCT_NAMES = Object.keys(PRODUCTS);
+    const AXES = ['thickness', 'width', 'type'];
+    const AXIS_SEL = { thickness: 'pcThickness', width: 'pcWidth', type: 'pcType' };
 
     let root, hub;
-    let salesByModel = new Map();   // 물품식별번호 → { total:{amount,count}, byYear: Map(연도 → {amount,count}) }
+    let salesIdx = {};              // 세부품명 → Map(물품식별번호 → { total, byYear })
     let salesYears = [];            // 실거래에 존재하는 연도 (내림차순)
-    let reg = [];                   // 현재 유효한 등록가 레코드
+    let regByProduct = {};          // 세부품명 → 현재 유효한 등록가 레코드[]
+    let stampByProduct = {};        // 세부품명 → 마지막 갱신 시각
+    let touched = {};               // 세부품명 → 기본 필터값을 이미 세팅했는지
     let ranking = [];
     let chart = null;
-    // 표 정렬 상태. 순위 컬럼은 항상 '등록가 오름차순 순위'로 고정하고(이 탭의 주제),
-    // 정렬은 화면 표시 순서만 바꾼다.
+    // 표 정렬 상태. 순번은 '현재 표시 순서'라 정렬을 따라 다시 매겨진다.
+    // 등록가 순위(요약 카드용)는 이와 별개로 priceRank에 고정 보관한다.
     let sortState = { key: 'price', dir: 'asc' };
 
     const $id = id => root.querySelector('#' + id);
@@ -1609,6 +1678,9 @@ console.log('%c[market-analysis.js v=20260728a — 시장 분석 5탭(수요기�
     // 조인·식별 키 = 물품식별번호. 같은 업체가 같은 규격에 여러 모델을 등록하는 경우가 실제로 있어
     // (예: 1000×t35mm 2종 이상) 업체나 모델명으로 묶으면 서로 다른 상품이 뭉개진다.
     const idntKey = v => String(v || '').trim();
+
+    const product = () => $id('pcProduct').value;
+    const spec = () => PRODUCTS[product()];
 
     function median(arr) {
         if (!arr.length) return 0;
@@ -1624,30 +1696,32 @@ console.log('%c[market-analysis.js v=20260728a — 시장 분석 5탭(수요기�
     function init(rootEl, rawData, hubRef) {
         root = rootEl; hub = hubRef;
         try {
-            salesByModel = buildSalesIndex(rawData);
+            buildSalesIndex(rawData);
+            populateProducts();
             populateYears();
             $id('pcRefresh').addEventListener('click', refresh);
+            $id('pcProduct').addEventListener('change', onProductChange);
             ['pcYear', 'pcThickness', 'pcWidth', 'pcType'].forEach(id => $id(id).addEventListener('change', render));
-            $id('pcTableWrap').addEventListener('click', onRowClick);
+            $id('pcTableWrap').addEventListener('click', onTableClick);
             $id('pcPrint').addEventListener('click', () => window.print());
 
-            const cached = loadCache();
-            if (cached) { reg = cached.items; showStamp(cached.ts); populateFilters(); render(); }
-            else showEmpty('등록가를 아직 불러오지 않았습니다. [등록가 갱신]을 누르세요.');
+            loadCache();
+            onProductChange();
         } catch (error) {
             console.error('가격 경쟁력 초기화 실패:', error);
             CommonUtils.showAlert(`가격 경쟁력 오류: ${error.message}`, 'error');
         }
     }
 
-    // 실거래(조달 B소스) → 물품식별번호별 누적 판매액·거래건수 (전체 + 연도별)
+    // 실거래(조달 B소스) → 품목별·물품식별번호별 판매액·거래건수 (전체 + 연도별)
     // 등록가는 '현재 유효한 계약'이라 연도와 무관하므로 연도 선택은 이 집계 범위만 바꾼다.
     function buildSalesIndex(rawData) {
-        const map = new Map();
         const years = new Set();
+        PRODUCT_NAMES.forEach(p => { salesIdx[p] = new Map(); });
         let noIdnt = 0;
         (rawData || []).forEach(r => {
-            if ((r['세부품명'] || '').trim() !== TARGET_PRODUCT) return;
+            const map = salesIdx[(r['세부품명'] || '').trim()];
+            if (!map) return;
             const k = idntKey(r['물품식별번호']);
             if (!k) { noIdnt++; return; }
             let c = map.get(k);
@@ -1665,13 +1739,14 @@ console.log('%c[market-analysis.js v=20260728a — 시장 분석 5탭(수요기�
             }
         });
         salesYears = [...years].sort((a, b) => b.localeCompare(a));
-        console.log(`[가격 경쟁력] 실거래 물품식별번호 ${map.size}종 · 연도 ${salesYears.join(',')}${noIdnt ? ` (식별번호 결손 ${noIdnt}행 제외)` : ''}`);
-        return map;
+        console.log('[가격 경쟁력] 실거래 물품식별번호 '
+            + PRODUCT_NAMES.map(p => `${p} ${salesIdx[p].size}종`).join(' · ')
+            + ` · 연도 ${salesYears.join(',')}${noIdnt ? ` (식별번호 결손 ${noIdnt}행 제외)` : ''}`);
     }
 
     // 선택 연도 기준 판매 집계. 'all'이면 전체 누적.
     function salesOf(key) {
-        const c = salesByModel.get(key);
+        const c = (salesIdx[product()] || new Map()).get(key);
         if (!c) return { amount: 0, count: 0 };
         const y = $id('pcYear').value;
         if (!y || y === 'all') return c.total;
@@ -1682,15 +1757,41 @@ console.log('%c[market-analysis.js v=20260728a — 시장 분석 5탭(수요기�
         return (!y || y === 'all') ? '전체 기간' : `${y}년`;
     };
 
+    function populateProducts() {
+        $id('pcProduct').innerHTML = PRODUCT_NAMES.map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('');
+    }
     function populateYears() {
         const sel = $id('pcYear');
         sel.innerHTML = `<option value="all">전체(누적)</option>`
             + salesYears.map(y => `<option value="${esc(y)}">${esc(y)}년</option>`).join('');
+        const now = String(new Date().getFullYear());
+        if ([...sel.options].some(o => o.value === now)) sel.value = now;   // 기본 = 올해
+    }
+
+    // 품목이 바뀌면 축(어떤 셀렉트를 띄울지)·라벨·필터 목록을 그 품목에 맞게 갈아끼운다.
+    function onProductChange() {
+        const s = spec();
+        AXES.forEach(ax => {
+            const on = !!s.filters[ax];
+            $id(AXIS_SEL[ax] + 'Label').classList.toggle('hidden', !on);
+            if (on) $id(AXIS_SEL[ax] + 'LabelText').textContent = s.filters[ax];
+        });
+
+        const reg = regByProduct[product()];
+        if (reg && reg.length) {
+            showStamp(stampByProduct[product()]);
+            populateFilters();
+            render();
+        } else {
+            $id('pcStamp').textContent = `${product()} 종합쇼핑몰 등록가 · 고정핀·타단위 제외`;
+            showEmpty(`${product()} 등록가를 아직 불러오지 않았습니다. [등록가 갱신]을 누르세요.`);
+        }
     }
 
     // ---- 등록가 수집 (버튼) ----
     async function refresh() {
         const btn = $id('pcRefresh');
+        const target = product();
         btn.disabled = true;
         const label = btn.textContent;
         try {
@@ -1698,22 +1799,20 @@ console.log('%c[market-analysis.js v=20260728a — 시장 분석 5탭(수요기�
             const items = [];
             for (let y = year - YEARS_BACK; y <= year; y++) {
                 btn.textContent = `${y}년 조회 중…`;
-                const first = await fetchMall(y, 1);
+                const first = await fetchMall(target, y, 1);
                 if (!first) continue;
                 items.push(...(first.items || []));
                 const pages = Math.ceil(Number(first.totalCount || 0) / 999);
                 for (let p = 2; p <= pages; p++) {
-                    const b = await fetchMall(y, p);
+                    const b = await fetchMall(target, y, p);
                     if (b && b.items) items.push(...b.items);
                 }
             }
             if (!items.length) throw new Error('등록가를 한 건도 받지 못했습니다.');
-            reg = normalize(items);
-            const ts = Date.now();
-            try { localStorage.setItem(CACHE_KEY, JSON.stringify({ ts, items: reg })); } catch (e) {}
-            showStamp(ts);
-            populateFilters();
-            render();
+            regByProduct[target] = normalize(target, items);
+            stampByProduct[target] = Date.now();
+            saveCache();
+            if (product() === target) { showStamp(stampByProduct[target]); populateFilters(); render(); }
         } catch (e) {
             console.error('등록가 갱신 실패:', e);
             CommonUtils.showAlert('등록가 갱신 실패: ' + e.message, 'error');
@@ -1723,66 +1822,86 @@ console.log('%c[market-analysis.js v=20260728a — 시장 분석 5탭(수요기�
         }
     }
 
-    async function fetchMall(year, pageNo) {
-        const url = `/api/mall?itemName=${encodeURIComponent(TARGET_PRODUCT)}&bgnDate=${year}0101&endDate=${year}1231&pageNo=${pageNo}`;
+    async function fetchMall(itemName, year, pageNo) {
+        const url = `/api/mall?itemName=${encodeURIComponent(itemName)}&bgnDate=${year}0101&endDate=${year}1231&pageNo=${pageNo}`;
         const res = await fetch(url, { cache: 'no-store' });
         const json = await res.json();
         const head = json?.response?.header;
         if (head && head.resultCode !== '00') {
-            console.warn(`[등록가 ${year} p${pageNo}] ${head.resultMsg}`);
+            console.warn(`[등록가 ${itemName} ${year} p${pageNo}] ${head.resultMsg}`);
             return null;
         }
         return json?.response?.body || null;
     }
 
-    // 원본 → 현재 유효한 매트만 남기고 규격 파싱 (부품·만료계약 제외, 업체+모델 최신 1건)
-    function normalize(items) {
+    // 원본 → 현재 유효한 상품만 남기고 규격 파싱 (부품·타단위·만료계약 제외, 식별번호별 최신 1건)
+    function normalize(itemName, items) {
+        const s = PRODUCTS[itemName];
         const today = todayStr();
         const best = new Map();
+        let dropPart = 0, dropUnit = 0, dropEnd = 0, dropParse = 0;
         items.forEach(i => {
-            const spec = String(i.prdctSpecNm || '');
-            if (spec.includes('(부품)')) return;                       // 고정핀 = 단위 '개'
-            if (String(i.cntrctEndDate || '') < today) return;         // 만료 계약
-            const p = splitIdent(spec);
-            const m = p.length >= 4 ? String(p[3]).match(SPEC_RE) : null;
-            if (!m) return;
+            const raw = String(i.prdctSpecNm || '');
+            if (raw.includes('(부품)')) { dropPart++; return; }                    // 고정핀 등
+            // 단가 단위가 다르면 같은 표에 세울 수 없다 (원/m 표에 원/㎡·원/개가 섞이면 순위가 거짓이 된다)
+            if ((i.prdctUnit || '').trim() !== s.unit) { dropUnit++; return; }
+            if (String(i.cntrctEndDate || '') < today) { dropEnd++; return; }      // 만료 계약
+            const parts = splitIdent(raw);
+            const parsed = s.parse(parts);
+            if (!parsed) { dropParse++; return; }
             const price = Number(i.cntrctPrceAmt) || 0;
             if (price <= 0) return;
             const k = idntKey(i.prdctIdntNo);
             if (!k) return;
             const prev = best.get(k);
-            if (prev && prev.bgn >= String(i.cntrctBgnDate || '')) return;   // 같은 상품의 갱신분만 채택
+            if (prev && prev.bgn >= String(i.cntrctBgnDate || '')) return;         // 같은 상품의 갱신분만 채택
             best.set(k, {
                 key: k,
                 idnt: k,
                 corp: (i.cntrctCorpNm || '').trim(),
                 bizno: String(i.cntrctCorpBizno || '').replace(/[^\d]/g, ''),
-                model: p[2],
-                width: Number(m[1]),
-                thickness: Number(m[2]),
-                type: p[4] || '(미표기)',
+                model: parts[2] || '-',
+                width: parsed.width,
+                thickness: parsed.thickness,
+                type: parsed.type,
+                foot: parsed.foot != null ? parsed.foot : null,
                 price,
-                unit: (i.prdctUnit || 'm').trim(),
+                unit: (i.prdctUnit || s.unit).trim(),
                 bgn: String(i.cntrctBgnDate || ''),
                 end: String(i.cntrctEndDate || '')
             });
         });
         const out = [...best.values()];
-        console.log(`[가격 경쟁력] 등록가 ${items.length}건 → 현재 유효 매트 ${out.length}건 / 업체 ${new Set(out.map(r => r.bizno)).size}곳`);
+        console.log(`[가격 경쟁력] ${itemName} 등록가 ${items.length}건 → 현재 유효 ${out.length}건 / 업체 ${new Set(out.map(r => r.bizno)).size}곳`
+            + ` (제외: 부품 ${dropPart} · 단위불일치 ${dropUnit} · 만료 ${dropEnd} · 규격파싱실패 ${dropParse})`);
         return out;
     }
 
+    function saveCache() {
+        try {
+            const o = {};
+            PRODUCT_NAMES.forEach(p => {
+                if (regByProduct[p]) o[p] = { ts: stampByProduct[p], items: regByProduct[p] };
+            });
+            localStorage.setItem(CACHE_KEY, JSON.stringify(o));
+        } catch (e) {}
+    }
     function loadCache() {
         try {
             const raw = localStorage.getItem(CACHE_KEY);
-            if (!raw) return null;
-            const o = JSON.parse(raw);
-            return (o && Array.isArray(o.items) && o.items.length) ? o : null;
-        } catch (e) { return null; }
+            if (!raw) return;
+            const o = JSON.parse(raw) || {};
+            PRODUCT_NAMES.forEach(p => {
+                if (o[p] && Array.isArray(o[p].items) && o[p].items.length) {
+                    regByProduct[p] = o[p].items;
+                    stampByProduct[p] = o[p].ts;
+                }
+            });
+        } catch (e) {}
     }
     function showStamp(ts) {
         const d = new Date(ts);
-        $id('pcStamp').textContent = `등록가 기준 ${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} 갱신 · 현재 유효한 계약만`;
+        $id('pcStamp').textContent = `${product()} 등록가 기준 ${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} 갱신 · 현재 유효한 계약만`;
     }
     function showEmpty(msg) {
         $id('pcSummary').innerHTML = `<div class="pc-empty">${esc(msg)}</div>`;
@@ -1791,50 +1910,68 @@ console.log('%c[market-analysis.js v=20260728a — 시장 분석 5탭(수요기�
     }
 
     function populateFilters() {
+        const s = spec();
+        const reg = regByProduct[product()] || [];
         const fill = (id, vals, fmt, all) => {
             const sel = $id(id), prev = sel.value;
             sel.innerHTML = (all ? `<option value="all">${all}</option>` : '')
                 + vals.map(v => `<option value="${esc(String(v))}">${esc(fmt(v))}</option>`).join('');
             if (prev && [...sel.options].some(o => o.value === prev)) sel.value = prev;
         };
-        // ⚠️ 두께·폭은 '전체' 없이 반드시 고정한다. 단가가 원/m이라 폭이 다르면 비교 자체가 성립 안 됨
+        // ⚠️ 폭·두께가 축인 품목에서는 '전체'를 두지 않는다. 단가가 원/m이라 폭이 다르면 비교가 성립 안 됨
         //    (600mm 17,500원과 2000mm 45,000원을 한 줄로 세우면 폭 작은 제품이 싼 것처럼 보인다).
-        fill('pcThickness', [...new Set(reg.map(r => r.thickness))].sort((a, b) => a - b), t => t + 't', null);
-        fill('pcWidth', [...new Set(reg.map(r => r.width))].sort((a, b) => a - b), w => w + 'mm', null);
-        fill('pcType', [...new Set(reg.map(r => r.type))].sort(), t => t, '전체');
+        if (s.filters.thickness) fill('pcThickness', [...new Set(reg.map(r => r.thickness))].sort((a, b) => a - b), t => numFmt(t) + 't', null);
+        if (s.filters.width) fill('pcWidth', [...new Set(reg.map(r => r.width))].sort((a, b) => a - b), w => numFmt(w) + 'mm', null);
+        if (s.filters.type) fill('pcType', [...new Set(reg.map(r => r.type))].sort(), t => t, '전체');
 
-        // 최초 1회만 기본값 지정 = 표본이 가장 많은 조합
-        if (!$id('pcThickness').dataset.touched) {
-            const top = (keyFn) => {
+        // 품목별로 최초 1회만 기본값 지정. 지정값이 없거나 그 품목에 없는 값이면 표본이 가장 많은 쪽.
+        if (!touched[product()]) {
+            const top = keyFn => {
                 const c = {}; reg.forEach(r => { c[keyFn(r)] = (c[keyFn(r)] || 0) + 1; });
                 return Object.keys(c).sort((a, b) => c[b] - c[a])[0];
             };
-            const t = top(r => r.thickness); if (t) $id('pcThickness').value = t;
-            const w = top(r => r.width); if (w) $id('pcWidth').value = w;
+            const pick = (id, want, fallback) => {
+                const sel = $id(id);
+                const has = v => v != null && [...sel.options].some(o => o.value === String(v));
+                if (has(want)) sel.value = String(want);
+                else if (has(fallback)) sel.value = String(fallback);
+            };
+            const d = s.defaults || {};
+            if (s.filters.thickness) pick('pcThickness', d.thickness, top(r => r.thickness));
+            if (s.filters.width) pick('pcWidth', d.width, top(r => r.width));
+            if (s.filters.type) pick('pcType', d.type, 'all');
+            touched[product()] = true;
         }
     }
 
     function render() {
+        const s = spec();
+        const reg = regByProduct[product()] || [];
         if (!reg.length) return;
-        const th = $id('pcThickness').value;
-        const width = $id('pcWidth').value;
-        const type = $id('pcType').value;
-        $id('pcThickness').dataset.touched = '1';
+        const val = ax => s.filters[ax] ? $id(AXIS_SEL[ax]).value : null;
+        const th = val('thickness'), width = val('width'), type = val('type');
 
-        const g = reg.filter(r => String(r.thickness) === String(th)
-            && String(r.width) === String(width)
-            && (type === 'all' || r.type === type));
+        const g = reg.filter(r =>
+            (th == null || String(r.thickness) === String(th))
+            && (width == null || String(r.width) === String(width))
+            && (type == null || type === 'all' || r.type === type));
 
-        const ctx = `${width}×t${th}mm · ${type === 'all' ? '종류 전체' : type}`;
+        // 문맥 문구도 그 품목의 축만 적는다
+        const bits = [product()];
+        if (width != null && th != null) bits.push(`${numFmt(width)}×t${numFmt(th)}mm`);
+        else if (width != null) bits.push(`${s.filters.width} ${numFmt(width)}mm`);
+        else if (th != null) bits.push(`t${numFmt(th)}mm`);
+        if (type != null) bits.push(type === 'all' ? `${s.filters.type} 전체` : type);
+        const ctx = bits.join(' · ');
 
-        if (g.length < 3) { showEmpty(`${ctx} — 등록 상품이 ${g.length}개뿐이라 비교하지 않습니다.`); return; }
+        if (g.length < MIN_GROUP) { showEmpty(`${ctx} — 등록 상품이 ${g.length}개뿐이라 비교하지 않습니다.`); return; }
         $id('pcChartWrap').classList.remove('hidden');
 
-        // 순위는 등록가 오름차순으로 먼저 확정한다(정렬을 바꿔도 순위 번호는 그대로).
+        // 등록가 순위(priceRank)를 먼저 확정한다. 요약 카드의 '등록가 순위'는 정렬과 무관하게 이 값을 쓴다.
         ranking = g.map(r => {
-            const s = salesOf(r.key);
-            return { ...r, dub: r.bizno === DUBALLO_BIZNO, amount: s.amount, count: s.count };
-        }).sort((a, b) => a.price - b.price).map((r, i) => ({ ...r, rank: i + 1 }));
+            const sale = salesOf(r.key);
+            return { ...r, dub: r.bizno === DUBALLO_BIZNO, amount: sale.amount, count: sale.count };
+        }).sort((a, b) => a.price - b.price).map((r, i) => ({ ...r, priceRank: i + 1 }));
         applySort();
 
         const prices = ranking.map(r => r.price);
@@ -1847,6 +1984,7 @@ console.log('%c[market-analysis.js v=20260728a — 시장 분석 5탭(수요기�
     }
 
     function renderSummary(ctx, mktMed, me, n) {
+        const s = spec();
         const card = (label, value, sub, cls) =>
             `<div class="pc-card"><div class="pc-card-label">${esc(label)}</div>
              <div class="pc-card-value ${cls}">${esc(value)}</div>
@@ -1854,39 +1992,45 @@ console.log('%c[market-analysis.js v=20260728a — 시장 분석 5탭(수요기�
         let cards;
         if (me) {
             const gap = (me.price / mktMed - 1) * 100;
-            cards = card('두발로 등록가', won(me.price) + '/m', me.model, 'text-gray-900')
-                + card('시장 중위 대비', (gap > 0 ? '+' : '') + gap.toFixed(1) + '%', `시장 중위 ${won(mktMed)}/m`, gap <= 0 ? 'text-blue-600' : 'text-red-600')
-                + card('등록가 순위', `${me.rank}위 / ${n}개 상품`, `${yearLabel()} 판매 ${eok(me.amount)}원 · ${me.count}건`, 'text-gray-900');
+            cards = card('두발로 등록가', won(me.price) + '/' + s.unit, `${me.model} · ${s.detail.get(me)}`, 'text-gray-900')
+                + card('시장 중위 대비', (gap > 0 ? '+' : '') + gap.toFixed(1) + '%', `시장 중위 ${won(mktMed)}/${s.unit}`, gap <= 0 ? 'text-blue-600' : 'text-red-600')
+                + card('등록가 순위', `${me.priceRank}위 / ${n}개 상품`, `${yearLabel()} 판매 ${eok(me.amount)}원 · ${me.count}건`, 'text-gray-900');
         } else {
+            const lowest = ranking.reduce((a, b) => a.price <= b.price ? a : b);
             cards = card('두발로 등록가', '해당 규격 없음', ctx, 'text-gray-400')
-                + card('시장 중위', won(mktMed) + '/m', `${n}개 상품`, 'text-gray-900')
-                + card('최저', won(Math.min(...ranking.map(r => r.price))) + '/m', ranking[0].corp, 'text-gray-900');
+                + card('시장 중위', won(mktMed) + '/' + s.unit, `${n}개 상품`, 'text-gray-900')
+                + card('최저', won(lowest.price) + '/' + s.unit, lowest.corp, 'text-gray-900');
         }
         const corps = new Set(ranking.map(r => r.bizno)).size;
         $id('pcSummary').innerHTML =
-            `<div class="pc-ctx">${esc(ctx)} · 등록 ${n}개 상품 / ${corps}개사 · <strong>종합쇼핑몰 등록가(원/m)</strong> 기준, 판매액·거래건수는 실거래(물품식별번호 조인) <strong>${esc(yearLabel())}</strong></div>
+            `<div class="pc-ctx">${esc(ctx)} · 등록 ${n}개 상품 / ${corps}개사 · <strong>종합쇼핑몰 등록가(${esc(s.priceLabel)})</strong> 기준, 판매액·거래건수는 실거래(물품식별번호 조인) <strong>${esc(yearLabel())}</strong></div>
              <div class="pc-cards">${cards}</div>`;
     }
 
-    // ---- 표 정렬 ----
-    const SORT_COLS = [
-        { key: 'rank', label: '순위', cls: 'pc-rank', type: 'number' },
-        { key: 'corp', label: '업체', cls: '', type: 'string' },
-        { key: 'model', label: '모델', cls: '', type: 'string' },
-        { key: 'price', label: '등록가(원/m)', cls: 'pc-num', type: 'number' },
-        { key: 'amount', label: '판매액', cls: 'pc-num', type: 'number' },
-        { key: 'count', label: '거래건수', cls: 'pc-num', type: 'number' }
-    ];
+    // ---- 표 ----
+    // 순번은 '현재 표시 순서'라 정렬을 따라 다시 매겨진다. 머리글을 누르면 등록가 순으로 되돌아간다.
+    function cols() {
+        const s = spec();
+        return [
+            { key: 'priceRank', label: '순번', cls: 'pc-rank', type: 'number', get: (r, i) => i + 1 },
+            { key: 'corp', label: '업체', cls: '', type: 'string', get: r => (r.dub ? '★ ' : '') + r.corp },
+            { key: 'model', label: '모델', cls: 'pc-muted', type: 'string', get: r => r.model },
+            { key: s.detail.key, label: s.detail.label, cls: 'pc-muted', type: s.detail.type, get: r => s.detail.get(r) },
+            { key: 'price', label: `등록가(${s.priceLabel})`, cls: 'pc-num pc-strong', type: 'number', get: r => won(r.price) },
+            { key: 'amount', label: yearLabel() === '전체 기간' ? '누적 판매액' : '판매액', cls: 'pc-num', type: 'number', get: r => r.amount ? eok(r.amount) + '원' : '-' },
+            { key: 'count', label: '거래건수', cls: 'pc-num', type: 'number', get: r => r.count ? CommonUtils.formatNumber(r.count) : '-' }
+        ];
+    }
 
     function applySort() {
-        const col = SORT_COLS.find(c => c.key === sortState.key) || SORT_COLS[0];
+        const col = cols().find(c => c.key === sortState.key) || cols()[0];
         const sign = sortState.dir === 'asc' ? 1 : -1;
         ranking.sort((a, b) => {
             const va = a[col.key], vb = b[col.key];
             const cmp = col.type === 'number'
                 ? (Number(va) || 0) - (Number(vb) || 0)
                 : String(va || '').localeCompare(String(vb || ''), 'ko');
-            return cmp ? cmp * sign : (a.rank - b.rank);   // 동점은 항상 등록가 순위순
+            return cmp ? cmp * sign : (a.priceRank - b.priceRank);   // 동점은 항상 등록가 순
         });
     }
 
@@ -1894,45 +2038,43 @@ console.log('%c[market-analysis.js v=20260728a — 시장 분석 5탭(수요기�
         const key = th.dataset.sortKey;
         if (!key) return;
         if (sortState.key === key) sortState.dir = sortState.dir === 'asc' ? 'desc' : 'asc';
-        // 숫자 컬럼은 '큰 값부터'가 기본(등록가만 싼 순이 기본), 업체·모델은 가나다순
+        // 판매액·거래건수는 '큰 값부터'가 기본, 나머지는 작은 값·가나다순부터
         else sortState = { key, dir: (key === 'amount' || key === 'count') ? 'desc' : 'asc' };
         applySort();
         renderTable();
     }
 
     function renderTable() {
-        const rows = ranking.map(c => `
-            <tr data-key="${esc(c.key)}"${c.dub ? ' class="pc-me"' : ''}>
-                <td class="pc-rank">${c.rank}</td>
-                <td>${c.dub ? '★ ' : ''}${esc(c.corp)}</td>
-                <td class="pc-muted">${esc(c.model)}</td>
-                <td class="pc-num pc-strong">${won(c.price)}</td>
-                <td class="pc-num">${c.amount ? eok(c.amount) + '원' : '-'}</td>
-                <td class="pc-num">${c.count ? CommonUtils.formatNumber(c.count) : '-'}</td>
+        const cs = cols();
+        const rows = ranking.map((r, i) => `
+            <tr data-key="${esc(r.key)}"${r.dub ? ' class="pc-me"' : ''}>
+                ${cs.map(c => `<td class="${c.cls}">${esc(c.get(r, i))}</td>`).join('')}
             </tr>`).join('');
-        const heads = SORT_COLS.map(col => {
-            const mark = sortState.key === col.key ? (sortState.dir === 'asc' ? ' ▲' : ' ▼') : '';
-            const label = col.key === 'amount' ? `${yearLabel() === '전체 기간' ? '누적 ' : ''}판매액` : col.label;
-            return `<th class="pc-sortable ${col.cls}" data-sort-key="${col.key}">${esc(label)}${mark}</th>`;
+        const heads = cs.map(c => {
+            const mark = sortState.key === c.key ? (sortState.dir === 'asc' ? ' ▲' : ' ▼') : '';
+            return `<th class="pc-sortable ${c.cls.replace('pc-strong', '').replace('pc-muted', '')}" data-sort-key="${esc(c.key)}">${esc(c.label)}${mark}</th>`;
         }).join('');
-        const sorted = SORT_COLS.find(c => c.key === sortState.key) || SORT_COLS[0];
+        const sorted = cs.find(c => c.key === sortState.key) || cs[0];
         $id('pcTableWrap').innerHTML = `
             <table class="pc-table">
                 <thead><tr>${heads}</tr></thead>
                 <tbody>${rows}</tbody>
             </table>
-            <div class="pc-note">순위는 등록가 싼 순 고정 · 현재 정렬 ${esc(sorted.label)} ${sortState.dir === 'asc' ? '오름차순' : '내림차순'}(머리글 클릭) · 판매액·거래건수는 ${esc(yearLabel())} 실거래 합계 · 행 클릭 시 그 업체의 전 규격 등록가</div>`;
+            <div class="pc-note">현재 정렬 ${esc(sorted.label)} ${sortState.dir === 'asc' ? '오름차순' : '내림차순'}(머리글 클릭, 순번은 표시 순서) · 판매액·거래건수는 ${esc(yearLabel())} 실거래 합계 · 행 클릭 시 그 업체의 전 규격 등록가</div>`;
     }
 
     function renderChart(me, mktMed) {
         const prices = ranking.map(r => r.price);
         const lo = Math.min(...prices), hi = Math.max(...prices);
-        const step = Math.max(500, Math.ceil((hi - lo) / 18 / 500) * 500);
+        const raw = Math.max(1, (hi - lo) / 18);
+        const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+        const step = Math.ceil(raw / mag) * mag;   // 품목별 가격대 차이가 커서 구간폭을 자동 산출
         const base = Math.floor(lo / step) * step;
         const bins = []; for (let x = base; x <= hi; x += step) bins.push(x);
         const counts = bins.map(() => 0);
         prices.forEach(v => { counts[Math.min(bins.length - 1, Math.floor((v - base) / step))]++; });
         const meBin = me ? Math.min(bins.length - 1, Math.floor((me.price - base) / step)) : -1;
+        const pl = spec().priceLabel;
 
         if (chart) chart.destroy();
         chart = new Chart($id('pcChart'), {
@@ -1947,40 +2089,44 @@ console.log('%c[market-analysis.js v=20260728a — 시장 분석 5탭(수요기�
                 plugins: {
                     legend: { display: false },
                     tooltip: { callbacks: {
-                        title: it => `${CommonUtils.formatNumber(bins[it[0].dataIndex])} ~ ${CommonUtils.formatNumber(bins[it[0].dataIndex] + step)}원/m`,
+                        title: it => `${CommonUtils.formatNumber(bins[it[0].dataIndex])} ~ ${CommonUtils.formatNumber(bins[it[0].dataIndex] + step)} ${pl}`,
                         label: it => `${it.parsed.y}개사${it.dataIndex === meBin ? ' (두발로 포함)' : ''}`
                     } }
                 },
                 scales: {
-                    x: { title: { display: true, text: '등록가 구간 (원/m)' }, grid: { display: false } },
+                    x: { title: { display: true, text: `등록가 구간 (${pl})` }, grid: { display: false } },
                     y: { title: { display: true, text: '업체 수' }, beginAtZero: true, ticks: { precision: 0 } }
                 }
             }
         });
     }
 
-    function onRowClick(e) {
+    function onTableClick(e) {
         const th = e.target.closest('th[data-sort-key]');
         if (th) { onHeadClick(th); return; }
         const tr = e.target.closest('tr[data-key]');
         if (!tr) return;
         const c = ranking.find(x => x.key === tr.dataset.key);
         if (!c) return;
+        const s = spec();
+        const reg = regByProduct[product()] || [];
         const mine = reg.filter(r => r.bizno === c.bizno)
-            .sort((a, b) => a.thickness - b.thickness || a.width - b.width);
+            .sort((a, b) => (a.width || 0) - (b.width || 0) || a.thickness - b.thickness);
+        const dim = r => (r.width != null ? `${numFmt(r.width)}×` : '') + `t${numFmt(r.thickness)}mm`
+            + (r.foot != null ? ` · 앞발 ${numFmt(r.foot)}mm` : '');
         const lines = mine.map(r => {
-            const s = salesOf(r.key);
+            const sale = salesOf(r.key);
             return `<tr${r.key === c.key ? ' style="background:#eff6ff;font-weight:600"' : ''}>
-                <td>${esc(r.model)}</td><td>${r.width}×t${r.thickness}mm</td><td>${esc(r.type)}</td>
+                <td>${esc(r.model)}</td><td>${esc(dim(r))}</td><td>${esc(r.type)}</td>
                 <td class="pc-muted">${esc(r.idnt)}</td>
                 <td style="text-align:right">${won(r.price)}</td>
-                <td style="text-align:right">${s.amount ? eok(s.amount) + '원' : '-'}</td>
-                <td style="text-align:right">${s.count || '-'}</td></tr>`;
+                <td style="text-align:right">${sale.amount ? eok(sale.amount) + '원' : '-'}</td>
+                <td style="text-align:right">${sale.count || '-'}</td></tr>`;
         }).join('');
-        CommonUtils.showModal(`${c.corp} — 등록 ${mine.length}종 · 계약 ${c.bgn.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3')}~${c.end.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3')}`, `
+        CommonUtils.showModal(`${c.corp} — ${product()} ${mine.length}종 · 계약 ${c.bgn.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3')}~${c.end.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3')}`, `
             <table class="pc-modal-table">
-                <thead><tr><th>모델</th><th>규격</th><th>종류</th><th>물품식별번호</th>
-                <th style="text-align:right">등록가(원/m)</th><th style="text-align:right">${esc(yearLabel())} 판매액</th><th style="text-align:right">거래건수</th></tr></thead>
+                <thead><tr><th>모델</th><th>규격</th><th>${esc(s.filters.type || '종류')}</th><th>물품식별번호</th>
+                <th style="text-align:right">등록가(${esc(s.priceLabel)})</th><th style="text-align:right">${esc(yearLabel())} 판매액</th><th style="text-align:right">거래건수</th></tr></thead>
                 <tbody>${lines}</tbody>
             </table>`, { width: '860px' });
     }

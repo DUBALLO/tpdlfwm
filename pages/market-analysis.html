@@ -298,21 +298,24 @@
         <!-- ============ 탭 5: 가격 경쟁력 (보행매트 실거래 단가 원/㎡ 환산 → 두발로 위치) ============ -->
         <div id="priceTab" class="hidden">
             <div class="bg-white rounded-lg shadow-sm p-4 mb-4 flex flex-wrap gap-4 items-center no-print">
+                <label class="text-sm text-gray-700">품목
+                    <select id="pcProduct" class="ml-1 border border-gray-300 rounded px-2 py-1 text-sm"></select>
+                </label>
                 <label class="text-sm text-gray-700">연도
                     <select id="pcYear" class="ml-1 border border-gray-300 rounded px-2 py-1 text-sm"></select>
                 </label>
-                <label class="text-sm text-gray-700">두께
+                <label id="pcThicknessLabel" class="text-sm text-gray-700"><span id="pcThicknessLabelText">두께</span>
                     <select id="pcThickness" class="ml-1 border border-gray-300 rounded px-2 py-1 text-sm"></select>
                 </label>
-                <label class="text-sm text-gray-700">폭
+                <label id="pcWidthLabel" class="text-sm text-gray-700"><span id="pcWidthLabelText">폭</span>
                     <select id="pcWidth" class="ml-1 border border-gray-300 rounded px-2 py-1 text-sm"></select>
                 </label>
-                <label class="text-sm text-gray-700">종류
+                <label id="pcTypeLabel" class="text-sm text-gray-700"><span id="pcTypeLabelText">종류</span>
                     <select id="pcType" class="ml-1 border border-gray-300 rounded px-2 py-1 text-sm"></select>
                 </label>
                 <button id="pcRefresh" type="button" class="border border-blue-500 text-blue-600 rounded px-3 py-1 text-sm bg-white hover:bg-blue-50">등록가 갱신</button>
                 <button id="pcPrint" type="button" class="border border-gray-300 rounded px-3 py-1 text-sm bg-white hover:bg-gray-50">인쇄</button>
-                <span id="pcStamp" class="text-xs text-gray-400">보행매트 종합쇼핑몰 등록가 · 고정핀 제외</span>
+                <span id="pcStamp" class="text-xs text-gray-400">보행매트 종합쇼핑몰 등록가 · 고정핀·타단위 제외</span>
             </div>
             <div id="pcPrintArea" class="printable-area">
                 <div id="pcSummary"></div>
@@ -326,6 +329,6 @@
     </main>
 
     <script src="../assets/js/common.js"></script>
-    <script src="../assets/js/market-analysis.js?v=20260728a"></script>
+    <script src="../assets/js/market-analysis.js?v=20260728b"></script>
 </body>
 </html>
