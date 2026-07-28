@@ -3,7 +3,7 @@
 // 설계: 각 탭 = 독립 IIFE(전역/함수명 충돌 0), DOM은 자기 탭 root로 스코프($id).
 //       B소스(loadAllProcurementData)는 오케스트레이터가 1회 로드해 3탭 공유.
 //       트렌드는 두발로 필터 제거 → 시장 전체 추이. cross-link 업체↔수요기관.
-console.log('%c[market-analysis.js v=20260721f — 시장 분석 통합(수요기관/업체/트렌드/월간주문내역: 월별·검색총합·인쇄 세로), B소스 1회 로드]', 'color:#0ea5e9; font-weight:bold');
+console.log('%c[market-analysis.js v=20260728a — 시장 분석 5탭(수요기관/업체/트렌드/월간주문내역/가격 경쟁력: 연도 선택·정렬 토글), B소스 1회 로드]', 'color:#0ea5e9; font-weight:bold');
 
 /* =========================================================================
  * IIFE 1 — 수요기관 분석 (원 agency-purchase.js)
@@ -1591,10 +1591,14 @@ console.log('%c[market-analysis.js v=20260721f — 시장 분석 통합(수요�
     const SPEC_RE = /^(\d+)\s*[×xX]\s*t(\d+)\s*mm$/;
 
     let root, hub;
-    let salesByModel = new Map();   // bizno|MODEL → { amount, count }
+    let salesByModel = new Map();   // 물품식별번호 → { total:{amount,count}, byYear: Map(연도 → {amount,count}) }
+    let salesYears = [];            // 실거래에 존재하는 연도 (내림차순)
     let reg = [];                   // 현재 유효한 등록가 레코드
     let ranking = [];
     let chart = null;
+    // 표 정렬 상태. 순위 컬럼은 항상 '등록가 오름차순 순위'로 고정하고(이 탭의 주제),
+    // 정렬은 화면 표시 순서만 바꾼다.
+    let sortState = { key: 'price', dir: 'asc' };
 
     const $id = id => root.querySelector('#' + id);
     const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1621,8 +1625,9 @@ console.log('%c[market-analysis.js v=20260721f — 시장 분석 통합(수요�
         root = rootEl; hub = hubRef;
         try {
             salesByModel = buildSalesIndex(rawData);
+            populateYears();
             $id('pcRefresh').addEventListener('click', refresh);
-            ['pcThickness', 'pcWidth', 'pcType'].forEach(id => $id(id).addEventListener('change', render));
+            ['pcYear', 'pcThickness', 'pcWidth', 'pcType'].forEach(id => $id(id).addEventListener('change', render));
             $id('pcTableWrap').addEventListener('click', onRowClick);
             $id('pcPrint').addEventListener('click', () => window.print());
 
@@ -1635,21 +1640,52 @@ console.log('%c[market-analysis.js v=20260721f — 시장 분석 통합(수요�
         }
     }
 
-    // 실거래(조달 B소스) → 물품식별번호별 누적 판매액·거래건수
+    // 실거래(조달 B소스) → 물품식별번호별 누적 판매액·거래건수 (전체 + 연도별)
+    // 등록가는 '현재 유효한 계약'이라 연도와 무관하므로 연도 선택은 이 집계 범위만 바꾼다.
     function buildSalesIndex(rawData) {
         const map = new Map();
+        const years = new Set();
         let noIdnt = 0;
         (rawData || []).forEach(r => {
             if ((r['세부품명'] || '').trim() !== TARGET_PRODUCT) return;
             const k = idntKey(r['물품식별번호']);
             if (!k) { noIdnt++; return; }
             let c = map.get(k);
-            if (!c) { c = { amount: 0, count: 0 }; map.set(k, c); }
-            c.amount += num(r['공급금액']);
-            c.count += 1;
+            if (!c) { c = { total: { amount: 0, count: 0 }, byYear: new Map() }; map.set(k, c); }
+            const amt = num(r['공급금액']);
+            c.total.amount += amt;
+            c.total.count += 1;
+            const y = String(r['기준일자'] || '').trim().slice(0, 4);
+            if (/^\d{4}$/.test(y)) {
+                years.add(y);
+                let cy = c.byYear.get(y);
+                if (!cy) { cy = { amount: 0, count: 0 }; c.byYear.set(y, cy); }
+                cy.amount += amt;
+                cy.count += 1;
+            }
         });
-        console.log(`[가격 경쟁력] 실거래 물품식별번호 ${map.size}종${noIdnt ? ` (식별번호 결손 ${noIdnt}행 제외)` : ''}`);
+        salesYears = [...years].sort((a, b) => b.localeCompare(a));
+        console.log(`[가격 경쟁력] 실거래 물품식별번호 ${map.size}종 · 연도 ${salesYears.join(',')}${noIdnt ? ` (식별번호 결손 ${noIdnt}행 제외)` : ''}`);
         return map;
+    }
+
+    // 선택 연도 기준 판매 집계. 'all'이면 전체 누적.
+    function salesOf(key) {
+        const c = salesByModel.get(key);
+        if (!c) return { amount: 0, count: 0 };
+        const y = $id('pcYear').value;
+        if (!y || y === 'all') return c.total;
+        return c.byYear.get(y) || { amount: 0, count: 0 };
+    }
+    const yearLabel = () => {
+        const y = $id('pcYear').value;
+        return (!y || y === 'all') ? '전체 기간' : `${y}년`;
+    };
+
+    function populateYears() {
+        const sel = $id('pcYear');
+        sel.innerHTML = `<option value="all">전체(누적)</option>`
+            + salesYears.map(y => `<option value="${esc(y)}">${esc(y)}년</option>`).join('');
     }
 
     // ---- 등록가 수집 (버튼) ----
@@ -1794,10 +1830,12 @@ console.log('%c[market-analysis.js v=20260721f — 시장 분석 통합(수요�
         if (g.length < 3) { showEmpty(`${ctx} — 등록 상품이 ${g.length}개뿐이라 비교하지 않습니다.`); return; }
         $id('pcChartWrap').classList.remove('hidden');
 
+        // 순위는 등록가 오름차순으로 먼저 확정한다(정렬을 바꿔도 순위 번호는 그대로).
         ranking = g.map(r => {
-            const s = salesByModel.get(r.key) || { amount: 0, count: 0 };
+            const s = salesOf(r.key);
             return { ...r, dub: r.bizno === DUBALLO_BIZNO, amount: s.amount, count: s.count };
         }).sort((a, b) => a.price - b.price).map((r, i) => ({ ...r, rank: i + 1 }));
+        applySort();
 
         const prices = ranking.map(r => r.price);
         const mktMed = median(prices);
@@ -1818,7 +1856,7 @@ console.log('%c[market-analysis.js v=20260721f — 시장 분석 통합(수요�
             const gap = (me.price / mktMed - 1) * 100;
             cards = card('두발로 등록가', won(me.price) + '/m', me.model, 'text-gray-900')
                 + card('시장 중위 대비', (gap > 0 ? '+' : '') + gap.toFixed(1) + '%', `시장 중위 ${won(mktMed)}/m`, gap <= 0 ? 'text-blue-600' : 'text-red-600')
-                + card('등록가 순위', `${me.rank}위 / ${n}개 상품`, `누적 판매 ${eok(me.amount)}원 · ${me.count}건`, 'text-gray-900');
+                + card('등록가 순위', `${me.rank}위 / ${n}개 상품`, `${yearLabel()} 판매 ${eok(me.amount)}원 · ${me.count}건`, 'text-gray-900');
         } else {
             cards = card('두발로 등록가', '해당 규격 없음', ctx, 'text-gray-400')
                 + card('시장 중위', won(mktMed) + '/m', `${n}개 상품`, 'text-gray-900')
@@ -1826,8 +1864,40 @@ console.log('%c[market-analysis.js v=20260721f — 시장 분석 통합(수요�
         }
         const corps = new Set(ranking.map(r => r.bizno)).size;
         $id('pcSummary').innerHTML =
-            `<div class="pc-ctx">${esc(ctx)} · 등록 ${n}개 상품 / ${corps}개사 · <strong>종합쇼핑몰 등록가(원/m)</strong> 기준, 누적 판매액·거래건수는 실거래(물품식별번호 조인)</div>
+            `<div class="pc-ctx">${esc(ctx)} · 등록 ${n}개 상품 / ${corps}개사 · <strong>종합쇼핑몰 등록가(원/m)</strong> 기준, 판매액·거래건수는 실거래(물품식별번호 조인) <strong>${esc(yearLabel())}</strong></div>
              <div class="pc-cards">${cards}</div>`;
+    }
+
+    // ---- 표 정렬 ----
+    const SORT_COLS = [
+        { key: 'rank', label: '순위', cls: 'pc-rank', type: 'number' },
+        { key: 'corp', label: '업체', cls: '', type: 'string' },
+        { key: 'model', label: '모델', cls: '', type: 'string' },
+        { key: 'price', label: '등록가(원/m)', cls: 'pc-num', type: 'number' },
+        { key: 'amount', label: '판매액', cls: 'pc-num', type: 'number' },
+        { key: 'count', label: '거래건수', cls: 'pc-num', type: 'number' }
+    ];
+
+    function applySort() {
+        const col = SORT_COLS.find(c => c.key === sortState.key) || SORT_COLS[0];
+        const sign = sortState.dir === 'asc' ? 1 : -1;
+        ranking.sort((a, b) => {
+            const va = a[col.key], vb = b[col.key];
+            const cmp = col.type === 'number'
+                ? (Number(va) || 0) - (Number(vb) || 0)
+                : String(va || '').localeCompare(String(vb || ''), 'ko');
+            return cmp ? cmp * sign : (a.rank - b.rank);   // 동점은 항상 등록가 순위순
+        });
+    }
+
+    function onHeadClick(th) {
+        const key = th.dataset.sortKey;
+        if (!key) return;
+        if (sortState.key === key) sortState.dir = sortState.dir === 'asc' ? 'desc' : 'asc';
+        // 숫자 컬럼은 '큰 값부터'가 기본(등록가만 싼 순이 기본), 업체·모델은 가나다순
+        else sortState = { key, dir: (key === 'amount' || key === 'count') ? 'desc' : 'asc' };
+        applySort();
+        renderTable();
     }
 
     function renderTable() {
@@ -1840,15 +1910,18 @@ console.log('%c[market-analysis.js v=20260721f — 시장 분석 통합(수요�
                 <td class="pc-num">${c.amount ? eok(c.amount) + '원' : '-'}</td>
                 <td class="pc-num">${c.count ? CommonUtils.formatNumber(c.count) : '-'}</td>
             </tr>`).join('');
+        const heads = SORT_COLS.map(col => {
+            const mark = sortState.key === col.key ? (sortState.dir === 'asc' ? ' ▲' : ' ▼') : '';
+            const label = col.key === 'amount' ? `${yearLabel() === '전체 기간' ? '누적 ' : ''}판매액` : col.label;
+            return `<th class="pc-sortable ${col.cls}" data-sort-key="${col.key}">${esc(label)}${mark}</th>`;
+        }).join('');
+        const sorted = SORT_COLS.find(c => c.key === sortState.key) || SORT_COLS[0];
         $id('pcTableWrap').innerHTML = `
             <table class="pc-table">
-                <thead><tr>
-                    <th class="pc-rank">순위</th><th>업체</th><th>모델</th>
-                    <th class="pc-num">등록가(원/m)</th><th class="pc-num">누적 판매액</th><th class="pc-num">거래건수</th>
-                </tr></thead>
+                <thead><tr>${heads}</tr></thead>
                 <tbody>${rows}</tbody>
             </table>
-            <div class="pc-note">등록가 싼 순 · 누적 판매액·거래건수는 해당 모델의 실거래 전체 기간 합계 · 행 클릭 시 그 업체의 전 규격 등록가</div>`;
+            <div class="pc-note">순위는 등록가 싼 순 고정 · 현재 정렬 ${esc(sorted.label)} ${sortState.dir === 'asc' ? '오름차순' : '내림차순'}(머리글 클릭) · 판매액·거래건수는 ${esc(yearLabel())} 실거래 합계 · 행 클릭 시 그 업체의 전 규격 등록가</div>`;
     }
 
     function renderChart(me, mktMed) {
@@ -1887,6 +1960,8 @@ console.log('%c[market-analysis.js v=20260721f — 시장 분석 통합(수요�
     }
 
     function onRowClick(e) {
+        const th = e.target.closest('th[data-sort-key]');
+        if (th) { onHeadClick(th); return; }
         const tr = e.target.closest('tr[data-key]');
         if (!tr) return;
         const c = ranking.find(x => x.key === tr.dataset.key);
@@ -1894,7 +1969,7 @@ console.log('%c[market-analysis.js v=20260721f — 시장 분석 통합(수요�
         const mine = reg.filter(r => r.bizno === c.bizno)
             .sort((a, b) => a.thickness - b.thickness || a.width - b.width);
         const lines = mine.map(r => {
-            const s = salesByModel.get(r.key) || { amount: 0, count: 0 };
+            const s = salesOf(r.key);
             return `<tr${r.key === c.key ? ' style="background:#eff6ff;font-weight:600"' : ''}>
                 <td>${esc(r.model)}</td><td>${r.width}×t${r.thickness}mm</td><td>${esc(r.type)}</td>
                 <td class="pc-muted">${esc(r.idnt)}</td>
@@ -1905,7 +1980,7 @@ console.log('%c[market-analysis.js v=20260721f — 시장 분석 통합(수요�
         CommonUtils.showModal(`${c.corp} — 등록 ${mine.length}종 · 계약 ${c.bgn.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3')}~${c.end.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3')}`, `
             <table class="pc-modal-table">
                 <thead><tr><th>모델</th><th>규격</th><th>종류</th><th>물품식별번호</th>
-                <th style="text-align:right">등록가(원/m)</th><th style="text-align:right">누적 판매액</th><th style="text-align:right">거래건수</th></tr></thead>
+                <th style="text-align:right">등록가(원/m)</th><th style="text-align:right">${esc(yearLabel())} 판매액</th><th style="text-align:right">거래건수</th></tr></thead>
                 <tbody>${lines}</tbody>
             </table>`, { width: '860px' });
     }

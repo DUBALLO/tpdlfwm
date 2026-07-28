@@ -60,6 +60,8 @@
         #priceTab .pc-chart-box { height: 240px; }
         #priceTab .pc-table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; background: #fff; }
         #priceTab .pc-table th { background: #f3f4f6; padding: 0.4rem 0.5rem; text-align: left; font-weight: 600; color: #4b5563; font-size: 0.75rem; border-bottom: 1px solid #d1d5db; }
+        #priceTab .pc-table th.pc-sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+        #priceTab .pc-table th.pc-sortable:hover { background: #e5e7eb; }
         #priceTab .pc-table td { padding: 0.4rem 0.5rem; border-bottom: 1px solid #f3f4f6; }
         #priceTab .pc-table tbody tr { cursor: pointer; }
         #priceTab .pc-table tbody tr:hover { background: #f9fafb; }
@@ -296,6 +298,9 @@
         <!-- ============ 탭 5: 가격 경쟁력 (보행매트 실거래 단가 원/㎡ 환산 → 두발로 위치) ============ -->
         <div id="priceTab" class="hidden">
             <div class="bg-white rounded-lg shadow-sm p-4 mb-4 flex flex-wrap gap-4 items-center no-print">
+                <label class="text-sm text-gray-700">연도
+                    <select id="pcYear" class="ml-1 border border-gray-300 rounded px-2 py-1 text-sm"></select>
+                </label>
                 <label class="text-sm text-gray-700">두께
                     <select id="pcThickness" class="ml-1 border border-gray-300 rounded px-2 py-1 text-sm"></select>
                 </label>
@@ -321,6 +326,6 @@
     </main>
 
     <script src="../assets/js/common.js"></script>
-    <script src="../assets/js/market-analysis.js?v=20260727d"></script>
+    <script src="../assets/js/market-analysis.js?v=20260728a"></script>
 </body>
 </html>
