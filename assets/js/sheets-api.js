@@ -67,7 +67,8 @@ class SheetsAPI {
 
         if (window.publicDataAPI && typeof window.publicDataAPI.fetch2026Data === 'function') {
             try {
-                apiData2026 = await window.publicDataAPI.fetch2026Data(true);
+                // 강제 갱신 금지 — 세션 캐시를 쓴다. 페이지를 옮길 때마다 100초를 다시 기다리던 원인이었다.
+                apiData2026 = await window.publicDataAPI.fetch2026Data();
                 console.log(`[API 2026 로드 성공] ${apiData2026.length}건`);
             } catch (error) {
                 console.error('[API 2026 로드 실패] 빈 배열 처리', error);
