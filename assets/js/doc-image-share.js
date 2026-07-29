@@ -1,7 +1,8 @@
-// 정식 문서(견적서·송장·거래명세서) 이미지 저장/공유 — 트랙 D2
-// 인쇄 영역을 html2canvas로 PNG로 만들어 navigator.share(파일)로 카톡 등에 공유.
-// 파일 공유 미지원(PC·구형)이면 PNG 다운로드(갤러리/다운로드 폴더 저장)로 폴백.
-console.log('%c[doc-image-share.js v=20260618a — 정식문서 이미지 저장/공유(D2)]', 'color:#10b981; font-weight:bold');
+// 정식 문서(견적서·송장·거래명세서) 이미지 저장 — 트랙 D2
+// 인쇄 영역을 html2canvas로 PNG로 만들어 파일로 저장한다.
+// ⚠️ 2026-07-29: OS 공유시트(navigator.share) 경유를 없앴다 — 윈도우에서 공유 목록에 뜨는 앱이
+//    하나도 제대로 동작하지 않아 저장까지 가는 길만 길어졌다(형우 확인). 이제 항상 바로 저장한다.
+console.log('%c[doc-image-share.js v=20260729a — 정식문서 이미지 저장(공유시트 경유 제거)]', 'color:#4b5563; font-weight:bold');
 
 // targetSelector: 캡처할 요소(견적/명세서='.page', 송장='#invoiceContent')
 // fallbackName: document.title이 비었을 때 쓸 파일명(확장자 제외)
@@ -26,18 +27,11 @@ async function shareDocImage(targetSelector, fallbackName, btn) {
     if (!blob) { alert('이미지 생성에 실패했습니다.'); return; }
 
     const base = String(document.title || fallbackName).replace(/[\\/:*?"<>|]+/g, '_').trim() || fallbackName;
-    const file = new File([blob], `${base}.png`, { type: 'image/png' });
 
-    // 파일 공유 지원(주로 모바일) → OS 공유시트(카톡 인라인 미리보기)
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      try { await navigator.share({ files: [file] }); return; }
-      catch (e) { if (e && e.name === 'AbortError') return; /* 그 외엔 다운로드 폴백으로 */ }
-    }
-
-    // 폴백(PC·미지원): PNG 다운로드
+    // PNG 저장 (다운로드 폴더 / 모바일은 갤러리·다운로드)
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = file.name;
+    a.href = url; a.download = `${base}.png`;
     document.body.appendChild(a); a.click(); a.remove();
     URL.revokeObjectURL(url);
   } catch (err) {
