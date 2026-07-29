@@ -43,12 +43,13 @@
             font-weight: 600;
             color: #4b5563;
             font-size: 0.75rem;
-            border-bottom: 1px solid #d1d5db;
+            border-bottom: 2px solid #9ca3af;
         }
 
+        /* 글자가 작아진 만큼 행 경계는 또렷하게 — 줄을 눈으로 따라가기 쉽게 */
         .inv-list td {
             padding: 0.5rem;
-            border-bottom: 1px solid #f3f4f6;
+            border-bottom: 1px solid #cbd5e1;
             color: #374151;
         }
 
@@ -108,11 +109,12 @@
 
         /* 품목 구분 행 (제품 '전체' 선택 시) */
         .inv-list tr.grp td {
-            background: #f9fafb;
+            background: #e5e7eb;
             font-weight: 600;
             color: #1f2937;
             font-size: 0.75rem;
-            border-bottom: 1px solid #d1d5db;
+            border-top: 2px solid #9ca3af;
+            border-bottom: 2px solid #9ca3af;
             padding: 0.5rem;
         }
 
@@ -216,18 +218,19 @@
             <div id="printMeta" style="font-size:0.75rem; color:#6b7280; margin-top:0.125rem;"></div>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <div class="bg-white rounded-lg shadow-md p-6 border-l-4 border-blue-500">
-                <p class="text-sm font-medium text-gray-500" id="prodLabel">선택 기간 생산량</p>
-                <p class="text-2xl font-bold text-gray-900" id="totalProd">-</p>
+        <!-- 요약 카드 — 매출 분석 '관급분석' 탭과 동일 디자인(색 띠 없음, p-4 · text-sm 라벨 · text-xl 값) -->
+        <div class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-8 stats-grid">
+            <div class="bg-white rounded-lg shadow-md p-4">
+                <p class="text-sm font-medium text-gray-600" id="prodLabel">선택 기간 생산량</p>
+                <p class="text-xl font-bold text-gray-900" id="totalProd">-</p>
             </div>
-            <div class="bg-white rounded-lg shadow-md p-6 border-l-4 border-red-500">
-                <p class="text-sm font-medium text-gray-500" id="outLabel">선택 기간 출고량</p>
-                <p class="text-2xl font-bold text-gray-900" id="totalOut">-</p>
+            <div class="bg-white rounded-lg shadow-md p-4">
+                <p class="text-sm font-medium text-gray-600" id="outLabel">선택 기간 출고량</p>
+                <p class="text-xl font-bold text-gray-900" id="totalOut">-</p>
             </div>
-            <div class="bg-white rounded-lg shadow-md p-6 border-l-4 border-green-500">
-                <p class="text-sm font-medium text-gray-500" id="stockLabel">기말 총 재고</p>
-                <p class="text-2xl font-bold text-gray-900" id="totalStock">-</p>
+            <div class="bg-white rounded-lg shadow-md p-4">
+                <p class="text-sm font-medium text-gray-600" id="stockLabel">기말 총 재고</p>
+                <p class="text-xl font-bold text-gray-900" id="totalStock">-</p>
             </div>
         </div>
 
