@@ -1,31 +1,53 @@
 // assets/js/inventory-management.js
-console.log('%c[inventory-management.js v=20260702c — 고정핀(입고·개) 지원 + 컴팩트 표 + 즉시갱신 + 음수재고 경고]', 'color:#0ea5e9; font-weight:bold');
+console.log('%c[inventory-management.js v=20260729a — 방초매트 추가 + 주문 수량 열 + 품목 전체(품목별 구간) + 모노톤 표 + 인쇄]', 'color:#4b5563; font-weight:bold');
 
 let rawInventoryData = [];
-let currentInventoryData = []; // 정렬을 위한 현재 표시 데이터
+let inventorySections = [];   // [{ product, cfg, rows, totals }] — 표시 단위(품목별 구간)
 let currentSortColumn = 'name'; // 기본 정렬 컬럼
-let currentSortOrder = 'asc'; // 기본 정렬 순서
+let currentSortOrder = 'asc';   // 기본 정렬 순서
 
-// 제품별 시트 컬럼·단위·라벨 설정 — 매트=생산·m / 고정핀=입고·개 (시트 컬럼명·단위·용어가 다름)
+// 제품별 시트 컬럼·단위·라벨 설정 — 매트=생산 / 고정핀=입고(개) / 방초매트=입고(롤)
+// ⚠️ 방초매트 컬럼은 시트에 접두사가 없다('입고 규격'·'출고 규격'). '출고처'는 고정핀과 이름이 겹쳐
+//    uniqueHeaders 파싱으로 뒤에 오는 방초매트 쪽이 '출고처_2'가 된다.
 const PRODUCT_CONFIG = {
     '보행매트': { specIn: '보행매트 생산 규격', qtyIn: '보행매트 생산량', specOut: '보행매트 출고 규격', qtyOut: '보행매트 출고량', dest: '보행매트 출고처', unit: 'm', inLabel: '생산' },
     '식생매트': { specIn: '식생매트 생산 규격', qtyIn: '식생매트 생산량', specOut: '식생매트 출고 규격', qtyOut: '식생매트 출고량', dest: '식생매트 출고처', unit: 'm', inLabel: '생산' },
+    '방초매트': { specIn: '입고 규격', qtyIn: '입고량 (롤)', specOut: '출고 규격', qtyOut: '출고량 (롤)', dest: '출고처_2', unit: '롤', inLabel: '입고' },
     '고정핀':   { specIn: '고정핀 입고 규격', qtyIn: '고정핀 입고량', specOut: '고정핀 출고 규격', qtyOut: '고정핀 출고량', dest: '출고처', unit: '개', inLabel: '입고' }
 };
-function getProductConfig() {
-    return PRODUCT_CONFIG[document.getElementById('filterProductType').value] || PRODUCT_CONFIG['보행매트'];
+const PRODUCT_ORDER = ['보행매트', '식생매트', '방초매트', '고정핀'];
+
+// 주문관리 시트 — 주문확정 물량(배송 전 주문)의 품명별 수량. 재고 표 '주문 수량' 열의 원천.
+const ORDER_DB_BASE = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRum7_WBDKTJSA8B1ATxqpd3BtvjXnPLNQXuMpQsx0q4HVmwm_-JRQLCjy-FrYryIBPuxYkhV7F1nWq/pub';
+const ORDER_DB_TABS = { deals: 0, dealLines: 745694215, deliveries: 2069628268 };
+let orderQtyByProduct = {}; // { 품목: Map(품명 → 수량) }
+let orderQtyAny = new Map(); // 품명 → 수량 (품목 불일치 시 폴백)
+
+function getSelectedProduct() {
+    return document.getElementById('filterProductType').value || 'all';
+}
+function getActiveProducts() {
+    const sel = getSelectedProduct();
+    return sel === 'all' ? PRODUCT_ORDER.slice() : [sel];
+}
+function getProductConfig(product) {
+    return PRODUCT_CONFIG[product || getSelectedProduct()] || PRODUCT_CONFIG['보행매트'];
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-    // 1. 오늘 날짜로 드롭다운 초기 세팅
+    // 1. 오늘 날짜로 드롭다운 초기 세팅 (품목은 '전체'가 기본)
     const today = new Date();
     document.getElementById('filterYear').value = today.getFullYear();
     document.getElementById('filterMonth').value = today.getMonth() + 1;
-    document.getElementById('filterProductType').value = '보행매트';
+    document.getElementById('filterProductType').value = 'all';
 
-    // 2. 데이터 로드
+    // 2. 데이터 로드 — 재고 시트(필수) + 주문확정 물량(선택, 실패해도 표는 정상)
     try {
-        rawInventoryData = await window.sheetsAPI.loadCSVData('inventory');
+        const [inv] = await Promise.all([
+            window.sheetsAPI.loadCSVData('inventory', { uniqueHeaders: true }),
+            loadOrderQty()
+        ]);
+        rawInventoryData = inv;
         renderInventory();
     } catch (error) {
         console.error("데이터 로드 실패:", error);
@@ -38,8 +60,69 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('filterYear').addEventListener('change', () => { syncMonthState(); renderInventory(); });
     document.getElementById('filterMonth').addEventListener('change', renderInventory);
     document.getElementById('weeklyStatusBtn').addEventListener('click', showWeeklyStatus);
+    document.getElementById('printBtn').addEventListener('click', () => window.print());
     syncMonthState();
 });
+
+// ===== 주문확정 물량 =====
+// 주문관리 칸반의 '주문' 단계와 동일 기준: 세금계산서 없음 + 배송 없음 = 아직 나가지 않은 확정 물량.
+async function loadOrderQty() {
+    try {
+        const [deals, dealLines, deliveries] = await Promise.all(
+            ['deals', 'dealLines', 'deliveries'].map(async k => {
+                const url = `${ORDER_DB_BASE}?gid=${ORDER_DB_TABS[k]}&single=true&output=csv&_=${Date.now()}`;
+                const res = await fetch(url, { cache: 'no-store' });
+                if (!res.ok) throw new Error(`주문 시트 HTTP ${res.status} (${k})`);
+                return window.sheetsAPI.parseCSV(await res.text());
+            })
+        );
+
+        // 배송 시트는 아직 '거래번호' 컬럼이 남아 있어 양쪽 키 모두 인정 (주문관리와 동일)
+        const shipped = new Set();
+        deliveries.forEach(d => {
+            const key = String(d.주문번호 || d.거래번호 || '').trim();
+            if (key) shipped.add(key);
+        });
+
+        const pending = new Set();
+        deals.forEach(d => {
+            const no = String(d.주문번호 || '').trim();
+            if (!no) return;
+            if (String(d.세금계산서일자 || '').trim()) return; // 납품 완료
+            if (shipped.has(no)) return;                        // 배송 단계로 넘어감
+            pending.add(no);
+        });
+
+        const byProduct = {};
+        const any = new Map();
+        dealLines.forEach(l => {
+            if (!pending.has(String(l.주문번호 || '').trim())) return;
+            const 품목 = String(l.품목 || '').trim();
+            const 품명 = String(l.품명 || '').trim();
+            const qty = Number(l.수량) || 0;
+            if (!품명 || !qty) return;
+            if (!byProduct[품목]) byProduct[품목] = new Map();
+            byProduct[품목].set(품명, (byProduct[품목].get(품명) || 0) + qty);
+            any.set(품명, (any.get(품명) || 0) + qty);
+        });
+
+        orderQtyByProduct = byProduct;
+        orderQtyAny = any;
+        console.log('[재고] 주문확정 물량 로드', { 대상주문: pending.size, 품명수: any.size });
+    } catch (e) {
+        console.warn('[재고] 주문확정 물량 로드 실패 — 주문 수량 열은 0으로 표시', e);
+        orderQtyByProduct = {};
+        orderQtyAny = new Map();
+    }
+}
+
+// 재고 규격(모델코드)에 걸린 주문확정 물량. 품목이 어긋난 입력(고정핀을 매트 품목으로 적은 경우 등)은 품명으로 폴백.
+function lookupOrderQty(product, name) {
+    if (!name) return 0;
+    const m = orderQtyByProduct[product];
+    if (m && m.has(name)) return m.get(name);
+    return orderQtyAny.get(name) || 0;
+}
 
 // P2-3: 연도='전체'면 월 선택이 무의미(여러 해의 같은 달 합산 = 오해) → 월 드롭다운 비활성
 function syncMonthState() {
@@ -54,25 +137,51 @@ function renderInventory() {
     const selectedYear = document.getElementById('filterYear').value;
     // P2-3: 연도='전체'면 월 무시 → 세 카드 기준 기간 일치(전체 누적)
     const selectedMonth = selectedYear === 'all' ? 'all' : document.getElementById('filterMonth').value;
-    const cfg = getProductConfig();
+    const products = getActiveProducts();
+    const isAll = getSelectedProduct() === 'all';
 
-    updatePeriodLabels(selectedYear, selectedMonth, cfg);
-    // 제품별 용어(생산/입고) — 컬럼 헤더 + '생산 현황' 버튼 라벨 동적 갱신
+    updatePeriodLabels(selectedYear, selectedMonth, isAll);
+
+    // 컬럼 헤더·버튼 라벨 — 제품마다 용어가 다름(생산/입고)
     const thProd = document.getElementById('th-prod-label');
-    if (thProd) thProd.textContent = `당월 ${cfg.inLabel}`;
+    if (thProd) thProd.textContent = isAll ? '당월 생산·입고' : `당월 ${getProductConfig().inLabel}`;
     const wkBtn = document.getElementById('weeklyStatusBtn');
-    if (wkBtn) wkBtn.textContent = `${cfg.inLabel} 현황`;
+    if (wkBtn) wkBtn.textContent = isAll ? '생산·입고 현황' : `${getProductConfig().inLabel} 현황`;
 
-    // 데이터 가공을 위한 맵 (품목별 생산·입고/출고/재고 집계)
-    const inventoryMap = new Map();
+    // 품목별 집계 → 표시용 구간(section) 생성
+    inventorySections = products.map(product => {
+        const cfg = PRODUCT_CONFIG[product];
+        const agg = aggregateProduct(cfg, selectedYear, selectedMonth);
 
-    // 선택된 제품 타입에 따른 컬럼명 (설정표 기반 — 매트=생산, 고정핀=입고)
-    const prodSpecCol = cfg.specIn;
-    const prodQtyCol = cfg.qtyIn;
-    const outSpecCol = cfg.specOut;
-    const outQtyCol = cfg.qtyOut;
+        // 카드 합계는 전체 규격 기준(활동 총량), 표는 재고 있는 규격만
+        const totals = agg.reduce((t, it) => {
+            t.prod += it.prodInPeriod;
+            t.out += it.outInPeriod;
+            t.stock += it.stock;
+            return t;
+        }, { prod: 0, out: 0, stock: 0 });
 
-    // 1. 전체 데이터 스캔하여 누적 재고 및 선택 기간 활동 계산
+        const rows = agg
+            .filter(it => it.stock !== 0)   // 재고 없는 규격은 표에서 제외
+            .map(it => ({ ...it, orderQty: lookupOrderQty(product, it.name) }));
+
+        return { product, cfg, rows, totals };
+    });
+
+    sortInventoryData();
+    renderInventoryTable();
+    updateSummaryCards();
+    updatePrintMeta(selectedYear, selectedMonth);
+}
+
+// 한 품목의 규격별 (기간 생산·입고 / 기간 출고 / 선택 시점까지 누적 재고) 집계
+function aggregateProduct(cfg, selectedYear, selectedMonth) {
+    const map = new Map();
+    const init = name => {
+        if (!map.has(name)) map.set(name, { prodInPeriod: 0, outInPeriod: 0, stock: 0 });
+        return map.get(name);
+    };
+
     rawInventoryData.forEach(row => {
         const dateStr = row['일자'] || ""; // 형식: 2026. 1. 19
         const parts = dateStr.split('.').map(s => parseInt(s.trim()));
@@ -80,52 +189,40 @@ function renderInventory() {
 
         const year = parts[0];
         const month = parts[1];
-        
-        // 데이터 필터링 조건
+
         const isSelectedYear = (selectedYear === 'all' || year == selectedYear);
         const isSelectedMonth = (selectedMonth === 'all' || month == selectedMonth);
         const isBeforeOrEqualSelection = checkIsBeforeOrEqual(year, month, selectedYear, selectedMonth);
 
-        const prodItem = row[prodSpecCol];
-        const prodQty = parseInt(row[prodQtyCol]) || 0;
-        const outItem = row[outSpecCol];
-        const outQty = parseInt(row[outQtyCol]) || 0;
+        const prodItem = (row[cfg.specIn] || '').trim();
+        const prodQty = parseInt(row[cfg.qtyIn]) || 0;
+        const outItem = (row[cfg.specOut] || '').trim();
+        const outQty = parseInt(row[cfg.qtyOut]) || 0;
 
-        // 생산 처리
         if (prodItem) {
-            initItem(inventoryMap, prodItem);
-            const data = inventoryMap.get(prodItem);
+            const data = init(prodItem);
             if (isSelectedYear && isSelectedMonth) data.prodInPeriod += prodQty;
             if (isBeforeOrEqualSelection) data.stock += prodQty;
         }
 
-        // 출고 처리
         if (outItem) {
-            initItem(inventoryMap, outItem);
-            const data = inventoryMap.get(outItem);
+            const data = init(outItem);
             if (isSelectedYear && isSelectedMonth) data.outInPeriod += outQty;
             if (isBeforeOrEqualSelection) data.stock -= outQty;
         }
     });
 
-    // 2. 데이터를 배열로 변환
-    currentInventoryData = Array.from(inventoryMap.entries()).map(([name, data]) => ({
+    return Array.from(map.entries()).map(([name, d]) => ({
         name,
-        prodInPeriod: data.prodInPeriod,
-        outInPeriod: data.outInPeriod,
-        stock: data.stock
+        prodInPeriod: d.prodInPeriod,
+        outInPeriod: d.outInPeriod,
+        stock: d.stock
     }));
-
-    // 3. 정렬 적용
-    sortInventoryData();
-    
-    // 4. UI 렌더링
-    renderInventoryTable();
 }
 
 // P2-3: 카드 라벨을 선택 기간으로 동적 갱신 (기간 기준 명확화 — '선택 시점까지 누적' 의미 반영)
-function updatePeriodLabels(selectedYear, selectedMonth, cfg) {
-    const inLabel = (cfg && cfg.inLabel) || '생산';
+function updatePeriodLabels(selectedYear, selectedMonth, isAll) {
+    const inLabel = isAll ? '생산·입고' : getProductConfig().inLabel;
     const period = selectedYear === 'all'
         ? '전체 기간'
         : (selectedMonth === 'all' ? `${selectedYear}년` : `${selectedYear}년 ${parseInt(selectedMonth)}월`);
@@ -143,7 +240,7 @@ function naturalSort(a, b) {
     const regex = /([A-Za-z]+)-?(\d+)/;
     const aMatch = a.match(regex);
     const bMatch = b.match(regex);
-    
+
     if (aMatch && bMatch) {
         // 접두사(DB, DBM 등) 비교
         if (aMatch[1] !== bMatch[1]) {
@@ -152,90 +249,128 @@ function naturalSort(a, b) {
         // 숫자 비교
         return parseInt(aMatch[2]) - parseInt(bMatch[2]);
     }
-    
+
     // 기본 문자열 비교
     return a.localeCompare(b);
 }
 
-// 재고 데이터 정렬
+// 재고 데이터 정렬 — 품목 구간은 유지하고 구간 안에서 정렬
 function sortInventoryData() {
-    currentInventoryData.sort((a, b) => {
-        let comparison = 0;
-        
-        switch(currentSortColumn) {
-            case 'name':
-                comparison = naturalSort(a.name, b.name);
-                break;
-            case 'prod':
-                comparison = a.prodInPeriod - b.prodInPeriod;
-                break;
-            case 'out':
-                comparison = a.outInPeriod - b.outInPeriod;
-                break;
-            case 'stock':
-                comparison = a.stock - b.stock;
-                break;
-        }
-        
-        return currentSortOrder === 'asc' ? comparison : -comparison;
+    inventorySections.forEach(sec => {
+        sec.rows.sort((a, b) => {
+            let comparison = 0;
+
+            switch (currentSortColumn) {
+                case 'name':
+                    comparison = naturalSort(a.name, b.name);
+                    break;
+                case 'prod':
+                    comparison = a.prodInPeriod - b.prodInPeriod;
+                    break;
+                case 'out':
+                    comparison = a.outInPeriod - b.outInPeriod;
+                    break;
+                case 'order':
+                    comparison = a.orderQty - b.orderQty;
+                    break;
+                case 'stock':
+                    comparison = a.stock - b.stock;
+                    break;
+            }
+
+            return currentSortOrder === 'asc' ? comparison : -comparison;
+        });
     });
 }
 
-// 재고 테이블 렌더링
+// 재고 테이블 렌더링 — 제품 '전체'면 품목별 구간을 순차 배치
 function renderInventoryTable() {
     const tbody = document.getElementById('inventoryList');
-    tbody.innerHTML = "";
-    
-    let totalP = 0, totalO = 0, totalS = 0;
-    
-    currentInventoryData.forEach(item => {
-        const row = tbody.insertRow();
-        // P3-3: 음수 재고(이월 미반영·규격키 불일치 가능)는 빨강 경고
-        const stockCls = item.stock < 0 ? 'text-red-600 bg-red-50' : 'text-blue-600 bg-blue-50';
-        // 컴팩트 표: 생산·출고 0값은 흐리게(zero) 처리
-        const zc = v => v === 0 ? ' zero' : '';
-        row.innerHTML = `
-            <td class="col-name px-4 py-3 font-medium text-gray-900">${item.name}</td>
-            <td class="col-num px-4 py-3${zc(item.prodInPeriod)}">${CommonUtils.formatNumber(item.prodInPeriod)}</td>
-            <td class="col-num px-4 py-3${zc(item.outInPeriod)}">${CommonUtils.formatNumber(item.outInPeriod)}</td>
-            <td class="col-num col-stock px-4 py-3 font-bold ${stockCls}">${CommonUtils.formatNumber(item.stock)}</td>
-        `;
-        totalP += item.prodInPeriod;
-        totalO += item.outInPeriod;
-        totalS += item.stock;
+    const isAll = getSelectedProduct() === 'all';
+    const num = v => CommonUtils.formatNumber(v);
+    const zc = v => v === 0 ? ' zero' : '';
+    let html = '';
+
+    inventorySections.forEach(sec => {
+        if (isAll) {
+            if (sec.rows.length === 0) return; // 재고 있는 규격이 없는 품목은 구간째 생략
+            html += `
+                <tr class="grp">
+                    <td colspan="5">${sec.product} <span style="color:#6b7280; font-weight:500;">(${sec.cfg.unit})</span>
+                        <span class="grp-sum">재고 합계 ${num(sec.rows.reduce((s, r) => s + r.stock, 0))}${sec.cfg.unit}</span>
+                    </td>
+                </tr>`;
+        }
+        sec.rows.forEach(item => {
+            const negCls = item.stock < 0 ? ' neg' : '';
+            const negTitle = item.stock < 0 ? ' title="음수 재고 — 이월 미반영이나 규격명 불일치 가능"' : '';
+            html += `
+                <tr>
+                    <td>${item.name}</td>
+                    <td class="col-num${zc(item.prodInPeriod)}">${num(item.prodInPeriod)}</td>
+                    <td class="col-num${zc(item.outInPeriod)}">${num(item.outInPeriod)}</td>
+                    <td class="col-num${zc(item.orderQty)}">${num(item.orderQty)}</td>
+                    <td class="col-num col-stock${negCls}"${negTitle}>${num(item.stock)}</td>
+                </tr>`;
+        });
     });
 
-    // 요약 카드 업데이트 (단위는 제품별 — 매트=m, 고정핀=개)
-    const unit = getProductConfig().unit;
-    document.getElementById('totalProd').textContent = CommonUtils.formatNumber(totalP) + unit;
-    document.getElementById('totalOut').textContent = CommonUtils.formatNumber(totalO) + unit;
-    const stockEl = document.getElementById('totalStock');
-    stockEl.textContent = CommonUtils.formatNumber(totalS) + unit;
-    // P3-3: 음수 재고 품목이 있으면 총 재고 카드도 빨강으로 경고
-    const hasNeg = currentInventoryData.some(it => it.stock < 0);
-    stockEl.classList.toggle('text-red-600', hasNeg);
-    stockEl.classList.toggle('text-gray-900', !hasNeg);
-    
-    // 정렬 아이콘 업데이트
+    if (!html) {
+        html = `<tr><td colspan="5" style="text-align:center; padding:1.5rem; color:#9ca3af;">재고가 있는 규격이 없습니다.</td></tr>`;
+    }
+    tbody.innerHTML = html;
+
     updateSortIcons();
+}
+
+// 요약 카드 — 품목마다 단위가 달라(전체 선택 시) 단위별로 나눠 합산해 표기
+function updateSummaryCards() {
+    const sumByUnit = key => {
+        const acc = new Map();
+        inventorySections.forEach(sec => {
+            acc.set(sec.cfg.unit, (acc.get(sec.cfg.unit) || 0) + sec.totals[key]);
+        });
+        const entries = [...acc.entries()];
+        const parts = entries.filter(([, v]) => v !== 0).map(([unit, v]) => `${CommonUtils.formatNumber(v)}${unit}`);
+        if (parts.length) return parts.join(' · ');
+        return entries.length ? `0${entries[0][0]}` : '-';
+    };
+
+    document.getElementById('totalProd').textContent = sumByUnit('prod');
+    document.getElementById('totalOut').textContent = sumByUnit('out');
+
+    const stockEl = document.getElementById('totalStock');
+    stockEl.textContent = sumByUnit('stock');
+    // 음수 재고 품목이 있으면 총 재고 카드도 굵게 경고 (모노톤 — 색 대신 밑줄)
+    const hasNeg = inventorySections.some(sec => sec.rows.some(r => r.stock < 0));
+    stockEl.style.textDecoration = hasNeg ? 'underline dotted' : 'none';
+
+    const sub = document.getElementById('listSubtitle');
+    if (sub) sub.textContent = '재고 있는 규격만 · 주문 수량 = 배송 전 확정 주문 (카드 합계는 전체 규격 기준)';
+}
+
+// 인쇄용 머리글 — 무엇을 언제 기준으로 뽑은 표인지 종이에 남긴다
+function updatePrintMeta(selectedYear, selectedMonth) {
+    const el = document.getElementById('printMeta');
+    if (!el) return;
+    const sel = getSelectedProduct();
+    const period = selectedYear === 'all'
+        ? '전체 기간'
+        : (selectedMonth === 'all' ? `${selectedYear}년` : `${selectedYear}년 ${parseInt(selectedMonth)}월`);
+    const now = new Date();
+    const stamp = `${now.getFullYear()}. ${now.getMonth() + 1}. ${now.getDate()}`;
+    el.textContent = `제품: ${sel === 'all' ? '전체' : sel} · 기간: ${period} · 출력일 ${stamp}`;
 }
 
 // 정렬 아이콘 업데이트
 function updateSortIcons() {
-    // 모든 정렬 아이콘 초기화
-    ['name', 'prod', 'out', 'stock'].forEach(col => {
+    ['name', 'prod', 'out', 'order', 'stock'].forEach(col => {
         const icon = document.getElementById(`sort-${col}`);
-        if (icon) {
-            icon.className = 'sort-icon';
-            icon.classList.remove('asc', 'desc', 'active');
-        }
+        if (icon) icon.textContent = '';
     });
-    
-    // 현재 정렬 컬럼 아이콘 활성화
+
     const activeIcon = document.getElementById(`sort-${currentSortColumn}`);
-    if (activeIcon) {
-        activeIcon.classList.add('active', currentSortOrder);
-    }
+    if (activeIcon) activeIcon.textContent = currentSortOrder === 'asc' ? '▲' : '▼';
 }
 
 // 테이블 정렬 함수 (HTML에서 호출)
@@ -248,16 +383,9 @@ function sortTable(column) {
         currentSortColumn = column;
         currentSortOrder = 'asc';
     }
-    
+
     sortInventoryData();
     renderInventoryTable();
-}
-
-// 품목 데이터 초기화 도우미
-function initItem(map, name) {
-    if (!map.has(name)) {
-        map.set(name, { prodInPeriod: 0, outInPeriod: 0, stock: 0 });
-    }
 }
 
 // "선택한 기간까지" 누적 데이터를 계산하기 위한 날짜 비교 함수
@@ -274,91 +402,71 @@ function checkIsBeforeOrEqual(y, m, selY, selM) {
 let allActivities = []; // 전체 활동 데이터
 let currentPage = 0; // 현재 페이지
 const itemsPerPage = 5; // 페이지당 표시할 항목 수
-let weeklyInLabel = '생산'; // 모달 용어(생산/입고) — 페이지네이션 재렌더 시 유지
-let weeklyUnit = 'm';       // 모달 수량 단위(m/개)
+let weeklyTitle = '생산 현황'; // 모달 제목 — 페이지네이션 재렌더 시 유지
 
 function showWeeklyStatus() {
-    const selectedProductType = document.getElementById('filterProductType').value;
-    const cfg = getProductConfig();
-    weeklyInLabel = cfg.inLabel;
-    weeklyUnit = cfg.unit;
+    const products = getActiveProducts();
+    const isAll = getSelectedProduct() === 'all';
+    weeklyTitle = isAll ? '생산·입고 현황' : `${getProductConfig().inLabel} 현황`;
 
-    // 선택된 제품 타입에 따른 컬럼명 (설정표 기반 — 매트=생산, 고정핀=입고)
-    const prodSpecCol = cfg.specIn;
-    const prodQtyCol = cfg.qtyIn;
-    const outSpecCol = cfg.specOut;
-    const outQtyCol = cfg.qtyOut;
-    const outDestCol = cfg.dest;
-    
-    // 최근 데이터 수집 (생산 + 출고 통합)
+    // 최근 데이터 수집 (생산·입고 + 출고 통합) — 제품별 컬럼·용어·단위가 다르므로 행마다 들고 다닌다
     allActivities = [];
-    
-    rawInventoryData.forEach(row => {
-        const dateStr = row['일자'] || "";
-        const worker = row['작업자'] || "-";
-        const timestamp = row['타임스탬프'] || "";
-        
-        // 생산 데이터
-        const prodSpec = row[prodSpecCol];
-        const prodQty = parseInt(row[prodQtyCol]) || 0;
-        if (prodSpec && prodQty > 0) {
-            allActivities.push({
-                date: dateStr,
-                timestamp: timestamp,
-                worker: worker,
-                product: selectedProductType,
-                type: weeklyInLabel,
-                spec: prodSpec,
-                qty: prodQty,
-                destination: '-'
-            });
-        }
-        
-        // 출고 데이터
-        const outSpec = row[outSpecCol];
-        const outQty = parseInt(row[outQtyCol]) || 0;
-        const outDest = row[outDestCol] || '-';
-        if (outSpec && outQty > 0) {
-            allActivities.push({
-                date: dateStr,
-                timestamp: timestamp,
-                worker: worker,
-                product: selectedProductType,
-                type: '출고',
-                spec: outSpec,
-                qty: outQty,
-                destination: outDest
-            });
-        }
+
+    products.forEach(product => {
+        const cfg = PRODUCT_CONFIG[product];
+
+        rawInventoryData.forEach(row => {
+            const dateStr = row['일자'] || "";
+            const worker = row['작업자'] || "-";
+            const timestamp = row['타임스탬프'] || "";
+
+            const prodSpec = (row[cfg.specIn] || '').trim();
+            const prodQty = parseInt(row[cfg.qtyIn]) || 0;
+            if (prodSpec && prodQty > 0) {
+                allActivities.push({
+                    date: dateStr, timestamp, worker,
+                    product, type: cfg.inLabel, spec: prodSpec, qty: prodQty,
+                    unit: cfg.unit, destination: '-'
+                });
+            }
+
+            const outSpec = (row[cfg.specOut] || '').trim();
+            const outQty = parseInt(row[cfg.qtyOut]) || 0;
+            const outDest = (row[cfg.dest] || '').trim() || '-';
+            if (outSpec && outQty > 0) {
+                allActivities.push({
+                    date: dateStr, timestamp, worker,
+                    product, type: '출고', spec: outSpec, qty: outQty,
+                    unit: cfg.unit, destination: outDest
+                });
+            }
+        });
     });
-    
+
     // 날짜 기준으로 최신순 정렬 (년.월.일 형식 파싱)
     allActivities.sort((a, b) => {
         const parseDate = (dateStr) => {
             const parts = dateStr.split('.').map(s => s.trim());
             if (parts.length >= 3) {
-                const year = parseInt(parts[0]);
-                const month = parseInt(parts[1]);
-                const day = parseInt(parts[2]);
-                return new Date(year, month - 1, day);
+                return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
             }
             return new Date(0);
         };
-        
+
         const dateA = parseDate(a.date);
         const dateB = parseDate(b.date);
-        
+
         // 날짜가 같으면 타임스탬프로 비교
         if (dateA.getTime() === dateB.getTime()) {
             return (b.timestamp || '').localeCompare(a.timestamp || '');
         }
-        
+
         return dateB - dateA; // 최신순 (내림차순)
     });
-    
+
     // 첫 페이지로 초기화
     currentPage = 0;
-    
+
     // 팝업 렌더링
     renderWeeklyStatusModal();
 }
@@ -368,7 +476,7 @@ function renderWeeklyStatusModal() {
     const start = currentPage * itemsPerPage;
     const end = start + itemsPerPage;
     const currentItems = allActivities.slice(start, end);
-    
+
     // 테이블 HTML 생성
     let tableHTML = `
         <div style="max-height: 500px; overflow-y: auto;">
@@ -386,7 +494,7 @@ function renderWeeklyStatusModal() {
                 </thead>
                 <tbody>
     `;
-    
+
     if (currentItems.length === 0) {
         tableHTML += `
             <tr>
@@ -395,29 +503,28 @@ function renderWeeklyStatusModal() {
         `;
     } else {
         currentItems.forEach(item => {
-            const typeClass = item.type === '출고' ? 'text-red-600' : 'text-blue-600';
             tableHTML += `
                 <tr>
                     <td class="px-3 py-3 text-center">${item.date}</td>
                     <td class="px-4 py-3 text-center">${item.worker}</td>
                     <td class="px-4 py-3 text-center">${item.product}</td>
-                    <td class="px-4 py-3 text-center font-semibold ${typeClass}">${item.type}</td>
+                    <td class="px-4 py-3 text-center font-semibold">${item.type}</td>
                     <td class="px-3 py-3 text-center">${item.spec}</td>
-                    <td class="px-4 py-3 text-center font-medium">${CommonUtils.formatNumber(item.qty)}${weeklyUnit}</td>
+                    <td class="px-4 py-3 text-center font-medium">${CommonUtils.formatNumber(item.qty)}${item.unit}</td>
                     <td class="px-4 py-3 text-center">${item.destination}</td>
                 </tr>
             `;
         });
     }
-    
+
     tableHTML += `
                 </tbody>
             </table>
         </div>
-        
+
         <div class="flex items-center justify-between mt-4 pt-4 border-t border-gray-200">
-            <button 
-                id="prevPageBtn" 
+            <button
+                id="prevPageBtn"
                 class="btn btn-secondary px-4 py-2 text-sm ${currentPage === 0 ? 'opacity-50 cursor-not-allowed' : ''}"
                 ${currentPage === 0 ? 'disabled' : ''}
             >
@@ -426,8 +533,8 @@ function renderWeeklyStatusModal() {
             <span class="text-sm text-gray-600">
                 ${start + 1}-${Math.min(end, allActivities.length)} / 전체 ${allActivities.length}건
             </span>
-            <button 
-                id="nextPageBtn" 
+            <button
+                id="nextPageBtn"
                 class="btn btn-secondary px-4 py-2 text-sm ${currentPage >= totalPages - 1 ? 'opacity-50 cursor-not-allowed' : ''}"
                 ${currentPage >= totalPages - 1 ? 'disabled' : ''}
             >
@@ -435,10 +542,10 @@ function renderWeeklyStatusModal() {
             </button>
         </div>
     `;
-    
+
     // 모달 표시
-    CommonUtils.showModal(`${weeklyInLabel} 현황`, tableHTML, { width: '1100px' });
-    
+    CommonUtils.showModal(weeklyTitle, tableHTML, { width: '1100px' });
+
     // 페이지네이션 버튼 이벤트 연결 (showModal이 DOM을 동기 삽입하므로 즉시 바인딩 — setTimeout 경합 제거)
     const prevBtn = document.getElementById('prevPageBtn');
     const nextBtn = document.getElementById('nextPageBtn');

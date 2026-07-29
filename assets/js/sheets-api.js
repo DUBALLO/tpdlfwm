@@ -88,7 +88,8 @@ class SheetsAPI {
         return finalCombined;
     }
 
-    async loadCSVData(sheetType) {
+    // options.uniqueHeaders: 헤더 이름이 중복된 시트에서 뒤 컬럼이 앞 컬럼을 덮어쓰지 않게 `이름_2`로 분리
+    async loadCSVData(sheetType, options = {}) {
         if (!this.csvUrls[sheetType]) {
             throw new Error(`유효하지 않은 시트 타입입니다: ${sheetType}`);
         }
@@ -96,7 +97,7 @@ class SheetsAPI {
         this.currentUrl = this.csvUrls[sheetType];
 
         try {
-            const data = await this.directLoad();
+            const data = await this.directLoad(options);
             if (data && data.length > 0) return data;
         } catch (error) {
             console.warn(`'${sheetType}' 직접 로드 실패:`, error.message);
@@ -104,7 +105,7 @@ class SheetsAPI {
 
         for (const proxy of this.corsProxies) {
             try {
-                const data = await this.proxyLoad(proxy);
+                const data = await this.proxyLoad(proxy, options);
                 if (data && data.length > 0) return data;
             } catch (error) {
                 console.warn(`'${sheetType}' 프록시 로드 실패 (${proxy}):`, error.message);
@@ -114,21 +115,21 @@ class SheetsAPI {
         throw new Error(`'${sheetType}' 시트의 모든 데이터 로드 방법이 실패했습니다.`);
     }
 
-    async directLoad() {
+    async directLoad(options = {}) {
         const response = await fetch(this.currentUrl);
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
         const csvText = await response.text();
-        return this.parseCSV(csvText);
+        return this.parseCSV(csvText, options);
     }
 
-    async proxyLoad(proxyUrl) {
+    async proxyLoad(proxyUrl, options = {}) {
         const url = proxyUrl + encodeURIComponent(this.currentUrl);
         const response = await fetch(url);
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
         const csvText = await response.text();
-        return this.parseCSV(csvText);
+        return this.parseCSV(csvText, options);
     }
 
     // 같은 (계약납품통합번호, 업체사업자등록번호, 계약납품요구물품순번) 그룹에서
@@ -213,7 +214,7 @@ class SheetsAPI {
         return result.map(s => s.trim().replace(/^"|"$/g, ''));
     }
 
-    parseCSV(csvText) {
+    parseCSV(csvText, options = {}) {
         const rows = [];
         let currentRow = [];
         let currentCell = '';
@@ -256,7 +257,19 @@ class SheetsAPI {
 
         if (rows.length < 2) return [];
 
-        const headers = rows[0].map(h => h.replace(/^"|"$/g, '').trim());
+        let headers = rows[0].map(h => h.replace(/^"|"$/g, '').trim());
+
+        // 재고 시트처럼 헤더 이름이 겹치는 시트(고정핀 '출고처' ↔ 방초매트 '출고처')는
+        // 그대로 두면 뒤 컬럼이 앞 컬럼을 덮어써 앞 컬럼 값을 못 읽는다 → 2번째부터 `이름_2`로 분리.
+        if (options.uniqueHeaders) {
+            const seen = new Map();
+            headers = headers.map(h => {
+                const n = (seen.get(h) || 0) + 1;
+                seen.set(h, n);
+                return n === 1 ? h : `${h}_${n}`;
+            });
+        }
+
         const data = [];
 
         for (let i = 1; i < rows.length; i++) {

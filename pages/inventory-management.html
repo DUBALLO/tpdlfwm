@@ -9,34 +9,158 @@
     <link href="../assets/css/common.css" rel="stylesheet">
     <script src="../assets/js/sheets-api.js?v=20260728c"></script>
     <style>
-        /* 재고 표 — 컴팩트형: 행 촘촘 + 구분선 유지 + 숫자 우측정렬 + 0값 흐리게 + 재고열 강조 */
-        .data-table th,
-        .data-table td {
-            padding: 0.5rem 1rem;
+        /* 재고 목록 — 주문관리 '주문확정 물량' 표와 동일한 글자 크기·여백·모노톤 */
+        .inv-list {
+            background: #fff;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
         }
-        /* 컴팩트 상태에서 행 경계가 또렷하도록 가로 구분선 강화 */
-        .data-table td {
+
+        .inv-list h3 {
+            font-weight: 600;
+            font-size: 0.875rem;
+            color: #374151;
+            margin: 0 0 0.5rem;
+        }
+
+        .inv-list h3 .sub {
+            color: #9ca3af;
+            font-weight: normal;
+            font-size: 0.75rem;
+        }
+
+        .inv-list table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.8125rem;
+        }
+
+        .inv-list th {
+            background: #f3f4f6;
+            padding: 0.5rem;
+            text-align: left;
+            font-weight: 600;
+            color: #4b5563;
+            font-size: 0.75rem;
             border-bottom: 1px solid #d1d5db;
         }
-        /* 품목명은 가운데, 숫자 3열은 오른쪽 정렬(자릿수 비교 쉽게) */
-        .data-table th.col-name,
-        .data-table td.col-name {
-            text-align: center;
+
+        .inv-list td {
+            padding: 0.5rem;
+            border-bottom: 1px solid #f3f4f6;
+            color: #374151;
         }
-        .data-table th.col-num,
-        .data-table td.col-num {
+
+        .inv-list tbody tr:hover {
+            background: #f9fafb;
+        }
+
+        .inv-list th.sortable {
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .inv-list th.sortable:hover {
+            background: #e5e7eb;
+        }
+
+        .inv-list th .ind {
+            color: #9ca3af;
+            font-size: 0.6875rem;
+        }
+
+        /* 숫자 열은 오른쪽 정렬 + 자릿수 비교 쉽게 */
+        .inv-list th.col-num,
+        .inv-list td.col-num {
             text-align: right;
-            padding-right: 1.5rem;
             font-variant-numeric: tabular-nums;
+            white-space: nowrap;
         }
-        /* 생산·출고가 0인 칸은 흐리게 처리해 실제 값이 있는 칸만 눈에 띄게 */
-        .data-table td.zero {
+
+        /* 값이 0인 칸은 흐리게 */
+        .inv-list td.zero {
             color: #9ca3af;
         }
-        /* 현재 재고 열 강조 띠 */
-        .data-table th.col-stock,
-        .data-table td.col-stock {
-            border-left: 2px solid #93c5fd;
+
+        /* 현재 재고 열 — 색 대신 굵기·구분선으로 강조 (모노톤) */
+        .inv-list th.col-stock,
+        .inv-list td.col-stock {
+            border-left: 1px solid #d1d5db;
+        }
+
+        .inv-list th.col-stock {
+            background: #e5e7eb;
+            color: #1f2937;
+        }
+
+        .inv-list td.col-stock {
+            font-weight: 700;
+            color: #111827;
+        }
+
+        /* 음수 재고(이월 미반영·규격키 불일치 가능) — 모노톤이라 배경 음영으로 표시 */
+        .inv-list td.col-stock.neg {
+            background: #e5e7eb;
+            text-decoration: underline;
+            text-decoration-style: dotted;
+        }
+
+        /* 품목 구분 행 (제품 '전체' 선택 시) */
+        .inv-list tr.grp td {
+            background: #f9fafb;
+            font-weight: 600;
+            color: #1f2937;
+            font-size: 0.75rem;
+            border-bottom: 1px solid #d1d5db;
+            padding: 0.5rem;
+        }
+
+        .inv-list tr.grp td .grp-sum {
+            float: right;
+            font-weight: 500;
+            color: #6b7280;
+        }
+
+        .print-only {
+            display: none;
+        }
+
+        @media print {
+            @page {
+                size: A4 portrait;
+                margin: 12mm;
+            }
+
+            .no-print {
+                display: none !important;
+            }
+
+            .print-only {
+                display: block;
+            }
+
+            body {
+                background: #fff;
+            }
+
+            main {
+                max-width: none !important;
+                padding: 0 !important;
+            }
+
+            .inv-list {
+                box-shadow: none;
+                padding: 0;
+            }
+
+            .inv-list tr {
+                page-break-inside: avoid;
+            }
+
+            .inv-list thead {
+                display: table-header-group;
+            }
         }
     </style>
 </head>
@@ -55,8 +179,10 @@
                 <div>
                     <label class="form-label">생산 제품</label>
                     <select id="filterProductType" class="form-select w-40">
+                        <option value="all">전체</option>
                         <option value="보행매트">보행매트</option>
                         <option value="식생매트">식생매트</option>
+                        <option value="방초매트">방초매트</option>
                         <option value="고정핀">고정핀</option>
                     </select>
                 </div>
@@ -79,9 +205,15 @@
                 </div>
                 <button id="searchBtn" class="btn btn-primary">조회하기</button>
                 <button id="weeklyStatusBtn" class="btn btn-warning">생산 현황</button>
+                <button id="printBtn" class="btn btn-secondary">인쇄</button>
                 <a href="https://docs.google.com/forms/d/e/1FAIpQLSfvu6_6g7h_3QdLKbPXdeaf5JWsDuOW638oYEtq5IkMXhcubQ/viewform"
                     target="_blank" rel="noopener" class="btn" style="background-color: #673AB7; color: white;">폼 입력</a>
             </div>
+        </div>
+
+        <div class="print-only" style="margin-bottom:0.75rem;">
+            <div style="font-size:1rem; font-weight:700; color:#111827;">실시간 재고 현황</div>
+            <div id="printMeta" style="font-size:0.75rem; color:#6b7280; margin-top:0.125rem;"></div>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
@@ -99,28 +231,31 @@
             </div>
         </div>
 
-        <div class="bg-white rounded-lg shadow-md overflow-hidden">
-            <table class="data-table w-full">
+        <div class="inv-list">
+            <h3>재고 목록 <span class="sub" id="listSubtitle">재고 있는 규격만 · 품목별</span></h3>
+            <table>
                 <thead>
                     <tr>
-                        <th class="col-name px-4 py-3 cursor-pointer hover:bg-gray-100" onclick="sortTable('name')">
-                            품목명 (규격) <span id="sort-name" class="sort-icon"></span>
+                        <th class="sortable" onclick="sortTable('name')">
+                            품목명 (규격) <span id="sort-name" class="ind"></span>
                         </th>
-                        <th class="col-num px-4 py-3 cursor-pointer hover:bg-gray-100" onclick="sortTable('prod')">
-                            <span id="th-prod-label">당월 생산</span> <span id="sort-prod" class="sort-icon"></span>
+                        <th class="col-num sortable" onclick="sortTable('prod')">
+                            <span id="th-prod-label">당월 생산</span> <span id="sort-prod" class="ind"></span>
                         </th>
-                        <th class="col-num px-4 py-3 cursor-pointer hover:bg-gray-100" onclick="sortTable('out')">
-                            당월 출고 <span id="sort-out" class="sort-icon"></span>
+                        <th class="col-num sortable" onclick="sortTable('out')">
+                            당월 출고 <span id="sort-out" class="ind"></span>
                         </th>
-                        <th class="col-num col-stock px-4 py-3 bg-blue-50 cursor-pointer hover:bg-blue-100"
-                            onclick="sortTable('stock')">
-                            현재 재고 <span id="sort-stock" class="sort-icon"></span>
+                        <th class="col-num sortable" onclick="sortTable('order')">
+                            주문 수량 <span id="sort-order" class="ind"></span>
+                        </th>
+                        <th class="col-num col-stock sortable" onclick="sortTable('stock')">
+                            현재 재고 <span id="sort-stock" class="ind"></span>
                         </th>
                     </tr>
                 </thead>
                 <tbody id="inventoryList">
                     <tr>
-                        <td colspan="4" class="text-center py-8 text-gray-500">데이터를 불러오는 중...</td>
+                        <td colspan="5" class="text-center py-8 text-gray-500">데이터를 불러오는 중...</td>
                     </tr>
                 </tbody>
             </table>
@@ -128,7 +263,7 @@
     </main>
 
     <script src="../assets/js/common.js"></script>
-    <script src="../assets/js/inventory-management.js?v=20260702c"></script>
+    <script src="../assets/js/inventory-management.js?v=20260729a"></script>
 </body>
 
 </html>
