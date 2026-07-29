@@ -1,17 +1,18 @@
 // assets/js/inventory-management.js
-console.log('%c[inventory-management.js v=20260729b — 품목별 재고 카드 + 품목 구간 소계(생산·출고·주문·재고) + 구분선 강화]', 'color:#4b5563; font-weight:bold');
+console.log('%c[inventory-management.js v=20260729d — 시트 헤더 단위표기 대응 + 식생매트 단위 ㎡ + 품목별 재고 카드 + 품목 구간 소계(생산·출고·주문·재고) + 구분선 강화]', 'color:#4b5563; font-weight:bold');
 
 let rawInventoryData = [];
 let inventorySections = [];   // [{ product, cfg, rows, totals }] — 표시 단위(품목별 구간)
 let currentSortColumn = 'name'; // 기본 정렬 컬럼
 let currentSortOrder = 'asc';   // 기본 정렬 순서
 
-// 제품별 시트 컬럼·단위·라벨 설정 — 매트=생산 / 고정핀=입고(개) / 방초매트=입고(롤)
+// 제품별 시트 컬럼·단위·라벨 설정 — 보행매트=생산(m) / 식생매트=생산(㎡) / 고정핀=입고(개) / 방초매트=입고(롤)
+// ⚠️ 단위는 시트에 없다(방초매트 '입고량 (롤)'만 헤더에 표기). 여기 값이 표시 단위의 단일 진실 — 형우 확인분.
 // ⚠️ 방초매트 컬럼은 시트에 접두사가 없다('입고 규격'·'출고 규격'). '출고처'는 고정핀과 이름이 겹쳐
 //    uniqueHeaders 파싱으로 뒤에 오는 방초매트 쪽이 '출고처_2'가 된다.
 const PRODUCT_CONFIG = {
     '보행매트': { specIn: '보행매트 생산 규격', qtyIn: '보행매트 생산량', specOut: '보행매트 출고 규격', qtyOut: '보행매트 출고량', dest: '보행매트 출고처', unit: 'm', inLabel: '생산' },
-    '식생매트': { specIn: '식생매트 생산 규격', qtyIn: '식생매트 생산량', specOut: '식생매트 출고 규격', qtyOut: '식생매트 출고량', dest: '식생매트 출고처', unit: 'm', inLabel: '생산' },
+    '식생매트': { specIn: '식생매트 생산 규격', qtyIn: '식생매트 생산량', specOut: '식생매트 출고 규격', qtyOut: '식생매트 출고량', dest: '식생매트 출고처', unit: '㎡', inLabel: '생산' },
     '방초매트': { specIn: '입고 규격', qtyIn: '입고량 (롤)', specOut: '출고 규격', qtyOut: '출고량 (롤)', dest: '출고처_2', unit: '롤', inLabel: '입고' },
     '고정핀':   { specIn: '고정핀 입고 규격', qtyIn: '고정핀 입고량', specOut: '고정핀 출고 규격', qtyOut: '고정핀 출고량', dest: '출고처', unit: '개', inLabel: '입고' }
 };
@@ -34,6 +35,32 @@ function getProductConfig(product) {
     return PRODUCT_CONFIG[product || getSelectedProduct()] || PRODUCT_CONFIG['보행매트'];
 }
 
+// 시트 헤더에 단위 표기가 붙어도(예: '식생매트 생산량' → '식생매트 생산량 (m²)') 계속 읽히도록
+// 실제 헤더에 맞춰 컬럼명을 한 번 보정한다. 정확 일치 우선, 없으면 끝의 괄호 표기를 떼고 맞춘다.
+// ⚠️ 이 보정이 없으면 헤더에 단위를 붙이는 순간 그 열이 통째로 0이 되고 재고가 음수로 흐른다(2026-07-29 실제 발생).
+function resolveSheetColumns(sampleRow) {
+    const keys = Object.keys(sampleRow || {});
+    if (!keys.length) return;
+
+    const norm = s => String(s).replace(/\s*\([^)]*\)\s*$/, '').replace(/\s+/g, ' ').trim();
+    const byNorm = new Map();
+    keys.forEach(k => { const n = norm(k); if (!byNorm.has(n)) byNorm.set(n, k); });
+
+    Object.entries(PRODUCT_CONFIG).forEach(([product, cfg]) => {
+        ['specIn', 'qtyIn', 'specOut', 'qtyOut', 'dest'].forEach(field => {
+            const want = cfg[field];
+            if (keys.includes(want)) return;
+            const hit = byNorm.get(norm(want));
+            if (hit) {
+                console.log(`[재고] 컬럼명 보정: ${product}.${field} '${want}' → '${hit}'`);
+                cfg[field] = hit;
+            } else {
+                console.warn(`[재고] 시트에서 컬럼을 못 찾음: ${product}.${field} '${want}' — 이 열은 0으로 집계됩니다`);
+            }
+        });
+    });
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
     // 1. 오늘 날짜로 드롭다운 초기 세팅 (품목은 '전체'가 기본)
     const today = new Date();
@@ -48,6 +75,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             loadOrderQty()
         ]);
         rawInventoryData = inv;
+        resolveSheetColumns(rawInventoryData[0]);
         renderInventory();
     } catch (error) {
         console.error("데이터 로드 실패:", error);
