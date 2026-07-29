@@ -1,5 +1,5 @@
 // assets/js/inventory-management.js
-console.log('%c[inventory-management.js v=20260729a — 방초매트 추가 + 주문 수량 열 + 품목 전체(품목별 구간) + 모노톤 표 + 인쇄]', 'color:#4b5563; font-weight:bold');
+console.log('%c[inventory-management.js v=20260729b — 품목별 재고 카드 + 품목 구간 소계(생산·출고·주문·재고) + 구분선 강화]', 'color:#4b5563; font-weight:bold');
 
 let rawInventoryData = [];
 let inventorySections = [];   // [{ product, cfg, rows, totals }] — 표시 단위(품목별 구간)
@@ -140,8 +140,6 @@ function renderInventory() {
     const products = getActiveProducts();
     const isAll = getSelectedProduct() === 'all';
 
-    updatePeriodLabels(selectedYear, selectedMonth, isAll);
-
     // 컬럼 헤더·버튼 라벨 — 제품마다 용어가 다름(생산/입고)
     const thProd = document.getElementById('th-prod-label');
     if (thProd) thProd.textContent = isAll ? '당월 생산·입고' : `당월 ${getProductConfig().inLabel}`;
@@ -170,8 +168,19 @@ function renderInventory() {
 
     sortInventoryData();
     renderInventoryTable();
-    updateSummaryCards();
+    renderStockCards(selectedYear, selectedMonth);
     updatePrintMeta(selectedYear, selectedMonth);
+}
+
+// 품목별 소계 — 표에 보이는 줄(재고 있는 규격)의 합
+function sectionSubtotal(sec) {
+    return sec.rows.reduce((t, r) => {
+        t.prod += r.prodInPeriod;
+        t.out += r.outInPeriod;
+        t.order += r.orderQty;
+        t.stock += r.stock;
+        return t;
+    }, { prod: 0, out: 0, order: 0, stock: 0 });
 }
 
 // 한 품목의 규격별 (기간 생산·입고 / 기간 출고 / 선택 시점까지 누적 재고) 집계
@@ -218,21 +227,6 @@ function aggregateProduct(cfg, selectedYear, selectedMonth) {
         outInPeriod: d.outInPeriod,
         stock: d.stock
     }));
-}
-
-// P2-3: 카드 라벨을 선택 기간으로 동적 갱신 (기간 기준 명확화 — '선택 시점까지 누적' 의미 반영)
-function updatePeriodLabels(selectedYear, selectedMonth, isAll) {
-    const inLabel = isAll ? '생산·입고' : getProductConfig().inLabel;
-    const period = selectedYear === 'all'
-        ? '전체 기간'
-        : (selectedMonth === 'all' ? `${selectedYear}년` : `${selectedYear}년 ${parseInt(selectedMonth)}월`);
-    const stockText = selectedYear === 'all'
-        ? '전체 기말 재고'
-        : (selectedMonth === 'all' ? `${selectedYear}년 말 재고` : `${selectedYear}년 ${parseInt(selectedMonth)}월 말 재고`);
-    const set = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
-    set('prodLabel', `${period} ${inLabel}량`);
-    set('outLabel', `${period} 출고량`);
-    set('stockLabel', stockText);
 }
 
 // 자연스러운 규격명 정렬 함수 (DB-800, DB-1000, DB-1200, DBM-1000 순서)
@@ -283,24 +277,26 @@ function sortInventoryData() {
     });
 }
 
-// 재고 테이블 렌더링 — 제품 '전체'면 품목별 구간을 순차 배치
+// 재고 테이블 렌더링 — 품목 구간(소계 줄) + 그 아래 규격별 줄
 function renderInventoryTable() {
     const tbody = document.getElementById('inventoryList');
-    const isAll = getSelectedProduct() === 'all';
     const num = v => CommonUtils.formatNumber(v);
     const zc = v => v === 0 ? ' zero' : '';
     let html = '';
 
     inventorySections.forEach(sec => {
-        if (isAll) {
-            if (sec.rows.length === 0) return; // 재고 있는 규격이 없는 품목은 구간째 생략
-            html += `
-                <tr class="grp">
-                    <td colspan="5">${sec.product} <span style="color:#6b7280; font-weight:500;">(${sec.cfg.unit})</span>
-                        <span class="grp-sum">재고 합계 ${num(sec.rows.reduce((s, r) => s + r.stock, 0))}${sec.cfg.unit}</span>
-                    </td>
-                </tr>`;
-        }
+        if (sec.rows.length === 0) return; // 재고 있는 규격이 없는 품목은 구간째 생략
+
+        // 품목 구간 머리 = 그 품목의 소계 줄 (당월 생산·입고 / 당월 출고 / 주문 수량 / 재고)
+        const sub = sectionSubtotal(sec);
+        html += `
+            <tr class="grp">
+                <td>${sec.product} <span class="grp-unit">(${sec.cfg.unit})</span></td>
+                <td class="col-num">${num(sub.prod)}</td>
+                <td class="col-num">${num(sub.out)}</td>
+                <td class="col-num">${num(sub.order)}</td>
+                <td class="col-num col-stock">${num(sub.stock)}</td>
+            </tr>`;
         sec.rows.forEach(item => {
             const negCls = item.stock < 0 ? ' neg' : '';
             const negTitle = item.stock < 0 ? ' title="음수 재고 — 이월 미반영이나 규격명 불일치 가능"' : '';
@@ -323,30 +319,29 @@ function renderInventoryTable() {
     updateSortIcons();
 }
 
-// 요약 카드 — 품목마다 단위가 달라(전체 선택 시) 단위별로 나눠 합산해 표기
-function updateSummaryCards() {
-    const sumByUnit = key => {
-        const acc = new Map();
-        inventorySections.forEach(sec => {
-            acc.set(sec.cfg.unit, (acc.get(sec.cfg.unit) || 0) + sec.totals[key]);
-        });
-        const entries = [...acc.entries()];
-        const parts = entries.filter(([, v]) => v !== 0).map(([unit, v]) => `${CommonUtils.formatNumber(v)}${unit}`);
-        if (parts.length) return parts.join(' · ');
-        return entries.length ? `0${entries[0][0]}` : '-';
-    };
+// 요약 카드 — 품목별 재고량 한 장씩 (단위가 품목마다 달라 섞어 쓰지 않는다)
+function renderStockCards(selectedYear, selectedMonth) {
+    const wrap = document.getElementById('stockCards');
+    if (!wrap) return;
 
-    document.getElementById('totalProd').textContent = sumByUnit('prod');
-    document.getElementById('totalOut').textContent = sumByUnit('out');
+    const asOf = selectedYear === 'all'
+        ? '전체 기말 기준'
+        : (selectedMonth === 'all' ? `${selectedYear}년 말 기준` : `${selectedYear}년 ${parseInt(selectedMonth)}월 말 기준`);
 
-    const stockEl = document.getElementById('totalStock');
-    stockEl.textContent = sumByUnit('stock');
-    // 음수 재고 품목이 있으면 총 재고 카드도 굵게 경고 (모노톤 — 색 대신 밑줄)
-    const hasNeg = inventorySections.some(sec => sec.rows.some(r => r.stock < 0));
-    stockEl.style.textDecoration = hasNeg ? 'underline dotted' : 'none';
+    wrap.innerHTML = inventorySections.map(sec => {
+        const stock = sec.totals.stock;
+        // 음수 재고는 색 대신 점선 밑줄로 경고 (모노톤)
+        const negStyle = stock < 0 ? ' style="text-decoration:underline dotted;"' : '';
+        return `
+            <div class="bg-white rounded-lg shadow-md p-4" style="flex:1 1 180px;">
+                <p class="text-sm font-medium text-gray-600">${sec.product} 재고</p>
+                <p class="text-xl font-bold text-gray-900"${negStyle}>${CommonUtils.formatNumber(stock)}${sec.cfg.unit}</p>
+                <p class="text-xs text-gray-500">${asOf}</p>
+            </div>`;
+    }).join('');
 
     const sub = document.getElementById('listSubtitle');
-    if (sub) sub.textContent = '재고 있는 규격만 · 주문 수량 = 배송 전 확정 주문 (카드 합계는 전체 규격 기준)';
+    if (sub) sub.textContent = '재고 있는 규격만 · 주문 수량 = 배송 전 확정 주문';
 }
 
 // 인쇄용 머리글 — 무엇을 언제 기준으로 뽑은 표인지 종이에 남긴다

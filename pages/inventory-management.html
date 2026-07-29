@@ -118,8 +118,7 @@
             padding: 0.5rem;
         }
 
-        .inv-list tr.grp td .grp-sum {
-            float: right;
+        .inv-list tr.grp td .grp-unit {
             font-weight: 500;
             color: #6b7280;
         }
@@ -218,21 +217,8 @@
             <div id="printMeta" style="font-size:0.75rem; color:#6b7280; margin-top:0.125rem;"></div>
         </div>
 
-        <!-- 요약 카드 — 매출 분석 '관급분석' 탭과 동일 디자인(색 띠 없음, p-4 · text-sm 라벨 · text-xl 값) -->
-        <div class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-8 stats-grid">
-            <div class="bg-white rounded-lg shadow-md p-4">
-                <p class="text-sm font-medium text-gray-600" id="prodLabel">선택 기간 생산량</p>
-                <p class="text-xl font-bold text-gray-900" id="totalProd">-</p>
-            </div>
-            <div class="bg-white rounded-lg shadow-md p-4">
-                <p class="text-sm font-medium text-gray-600" id="outLabel">선택 기간 출고량</p>
-                <p class="text-xl font-bold text-gray-900" id="totalOut">-</p>
-            </div>
-            <div class="bg-white rounded-lg shadow-md p-4">
-                <p class="text-sm font-medium text-gray-600" id="stockLabel">기말 총 재고</p>
-                <p class="text-xl font-bold text-gray-900" id="totalStock">-</p>
-            </div>
-        </div>
+        <!-- 요약 카드 — 품목별 재고량. 디자인은 매출 분석 '관급분석' 탭과 동일(색 띠 없음, p-4 · 라벨 14px · 값 20px) -->
+        <div id="stockCards" class="flex flex-wrap gap-3 mb-8 stats-grid"></div>
 
         <div class="inv-list">
             <h3>재고 목록 <span class="sub" id="listSubtitle">재고 있는 규격만 · 품목별</span></h3>
@@ -266,7 +252,7 @@
     </main>
 
     <script src="../assets/js/common.js"></script>
-    <script src="../assets/js/inventory-management.js?v=20260729a"></script>
+    <script src="../assets/js/inventory-management.js?v=20260729b"></script>
 </body>
 
 </html>
