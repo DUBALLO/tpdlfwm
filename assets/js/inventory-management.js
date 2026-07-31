@@ -531,7 +531,7 @@ function renderWeeklyStatusModal() {
                     <td class="px-3 py-3 text-center">${item.date}</td>
                     <td class="px-4 py-3 text-center">${item.worker}</td>
                     <td class="px-4 py-3 text-center">${item.product}</td>
-                    <td class="px-4 py-3 text-center font-semibold">${item.type}</td>
+                    <td class="px-4 py-3 text-center font-semibold" style="color: ${item.type === '출고' ? '#dc2626' : '#2563eb'};">${item.type}</td>
                     <td class="px-3 py-3 text-center">${item.spec}</td>
                     <td class="px-4 py-3 text-center font-medium">${CommonUtils.formatNumber(item.qty)}${item.unit}</td>
                     <td class="px-4 py-3 text-center">${item.destination}</td>
