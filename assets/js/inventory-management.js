@@ -1,5 +1,5 @@
 // assets/js/inventory-management.js
-console.log('%c[inventory-management.js v=20260810e — 세로형 원장 기준 + 입출고 다품목 입력 화면(한 전표에 여러 규격)]', 'color:#4b5563; font-weight:bold');
+console.log('%c[inventory-management.js v=20260810f — 세로형 원장 기준 + 입출고 다품목 입력 화면(한 전표에 여러 규격)]', 'color:#4b5563; font-weight:bold');
 
 // ⚠️ 2026-08-10 구조 변경 — 재고 시트가 가로형(품목별 전용 컬럼)에서 세로형 원장으로 바뀌었다.
 //    옛 구조는 출고 규격을 하나 더 받을 때마다 컬럼을 늘려야 했고(잔해 컬럼 14개), 헤더에 단위 표기가
@@ -581,13 +581,6 @@ function openEntryModal() {
                     <option value="생산">생산</option>
                 </select>
             </div>
-            <div><label class="form-label">거래구분</label>
-                <select id="enTrade" class="form-select" style="width:8rem;">
-                    <option value="관급">관급</option>
-                    <option value="사급">사급</option>
-                    <option value="">(없음)</option>
-                </select>
-            </div>
             <div style="flex:1 1 16rem;"><label class="form-label">거래처</label>
                 <input id="enPartner" class="form-input" list="enPartnerList" placeholder="현장명 또는 매입처" style="width:100%;" autocomplete="off">
                 <datalist id="enPartnerList">${partnerSuggestions().map(p => `<option value="${esc(p)}"></option>`).join('')}</datalist>
@@ -647,7 +640,9 @@ async function saveEntry() {
     const 일자 = `${Number(d[0])}. ${Number(d[1])}. ${Number(d[2])}`;   // 원장 표기와 동일하게
 
     const 구분 = document.getElementById('enKind').value;
-    const 거래구분 = document.getElementById('enTrade').value;
+    // 거래구분(관급/사급)은 입력에서 뺐다 — 고정핀처럼 같은 물건이 관·사급 양쪽으로 나가서
+    // 재고를 갈라 볼 실익이 없다(형우 판단 2026-08-10). 원장 컬럼은 남아 있고 값만 비운다.
+    const 거래구분 = '';
     const 거래처 = document.getElementById('enPartner').value.trim();
     const 작업자 = document.getElementById('enWorker').value.trim();
 
