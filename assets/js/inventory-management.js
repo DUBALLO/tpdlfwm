@@ -1,5 +1,5 @@
 // assets/js/inventory-management.js
-console.log('%c[inventory-management.js v=20260810a — 세로형 원장 기준 전환(1행=1건) + 품목마스터에서 품목·단위·용어 로드]', 'color:#4b5563; font-weight:bold');
+console.log('%c[inventory-management.js v=20260810b — 세로형 원장 기준 + 입출고 다품목 입력 화면(한 전표에 여러 규격)]', 'color:#4b5563; font-weight:bold');
 
 // ⚠️ 2026-08-10 구조 변경 — 재고 시트가 가로형(품목별 전용 컬럼)에서 세로형 원장으로 바뀌었다.
 //    옛 구조는 출고 규격을 하나 더 받을 때마다 컬럼을 늘려야 했고(잔해 컬럼 14개), 헤더에 단위 표기가
@@ -10,6 +10,7 @@ console.log('%c[inventory-management.js v=20260810a — 세로형 원장 기준 
 let ledger = [];        // 원장 정규화 행 — { date, year, month, kind, trade, product, spec, qty, sign, unit, partner, worker, ts, slip }
 let products = [];      // 품목 목록(마스터 순서) — [{ name, unit, inLabel }]
 let productMeta = {};   // 품목명 → { unit, inLabel }
+let specsByProduct = {};// 품목명 → [규격] — 입력 화면 규격 자동완성용(마스터 + 원장 실사용분)
 let inventorySections = [];   // [{ product, cfg, rows, totals }] — 표시 단위(품목별 구간)
 let currentSortColumn = 'name'; // 기본 정렬 컬럼
 let currentSortOrder = 'asc';   // 기본 정렬 순서
@@ -72,6 +73,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('filterProductType').addEventListener('change', renderInventory);
     document.getElementById('filterYear').addEventListener('change', () => { syncMonthState(); renderInventory(); });
     document.getElementById('filterMonth').addEventListener('change', renderInventory);
+    document.getElementById('entryBtn').addEventListener('click', openEntryModal);
     document.getElementById('weeklyStatusBtn').addEventListener('click', showWeeklyStatus);
     document.getElementById('printBtn').addEventListener('click', () => window.print());
     syncMonthState();
@@ -83,6 +85,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 function buildProducts(rawMaster, rawLedger) {
     products = [];
     productMeta = {};
+    specsByProduct = {};
+    const addSpec = (name, spec) => {
+        if (!name || !spec) return;
+        if (!specsByProduct[name]) specsByProduct[name] = [];
+        if (specsByProduct[name].indexOf(spec) < 0) specsByProduct[name].push(spec);
+    };
     const put = (name, unit, inLabel) => {
         if (!name || productMeta[name]) return;
         const meta = { name, unit: unit || '', inLabel: inLabel || '입고' };
@@ -92,14 +100,19 @@ function buildProducts(rawMaster, rawLedger) {
 
     (rawMaster || []).forEach(r => {
         if (String(r['사용'] || 'Y').trim().toUpperCase() === 'N') return;
-        put(String(r['품목'] || '').trim(), String(r['단위'] || '').trim(), String(r['입고구분'] || '').trim());
+        const name = String(r['품목'] || '').trim();
+        put(name, String(r['단위'] || '').trim(), String(r['입고구분'] || '').trim());
+        addSpec(name, String(r['규격'] || '').trim());
     });
 
     (rawLedger || []).forEach(r => {
         const name = String(r['품목'] || '').trim();
-        if (!name || productMeta[name]) return;
-        console.warn(`[재고] 품목마스터에 없는 품목이 원장에 있습니다: '${name}' — 마스터에 한 줄 추가해 주세요`);
-        put(name, String(r['단위'] || '').trim(), '입고');
+        if (!name) return;
+        if (!productMeta[name]) {
+            console.warn(`[재고] 품목마스터에 없는 품목이 원장에 있습니다: '${name}' — 마스터에 한 줄 추가해 주세요`);
+            put(name, String(r['단위'] || '').trim(), '입고');
+        }
+        addSpec(name, String(r['규격'] || '').trim());
     });
 
     console.log('[재고] 품목', products.map(p => `${p.name}(${p.unit}·${p.inLabel})`).join(' / '));
@@ -464,6 +477,219 @@ function checkIsBeforeOrEqual(y, m, selY, selM) {
         if (selM === 'all' || m <= selM) return true;
     }
     return false;
+}
+
+// ===== 입출고 입력 =====
+// 한 전표에 여러 규격을 담는다 — 출고는 섞여 나가므로 [품목·규격·수량] 줄을 계속 늘릴 수 있어야 한다.
+// 저장하면 GAS가 한 전표번호(M-YYMMDD-NN)로 원장에 N행을 넣는다.
+const GAS_WRITE_URL = 'https://script.google.com/macros/s/AKfycbxM128rPA6TSQltBIOuiB2zGQB--n9S-V93jNLGxTLJZnwBpUMfgiG1BMZDwCXufW2f/exec';
+let entryLineSeq = 0;
+
+async function callGAS(action, payload) {
+    // 멱등성 키: 짧은 시간 안에 같은 요청이 두 번 오면 GAS가 캐시된 결과 반환
+    const _requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const res = await fetch(GAS_WRITE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // CORS preflight 회피
+        body: JSON.stringify({ action, _requestId, ...payload })
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+}
+
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// 거래처 자동완성 목록 — 원장에 쓴 값을 최근 쓴 순서로. 현장명이 대부분이라 목록에서 고르기보다 이게 빠르다.
+function partnerSuggestions() {
+    const seen = [];
+    for (let i = ledger.length - 1; i >= 0; i--) {
+        const p = ledger[i].partner;
+        if (p && seen.indexOf(p) < 0) seen.push(p);
+    }
+    return seen;
+}
+
+function entryLineHtml(idx) {
+    const opts = products.map(p => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
+    return `
+        <tr id="el-${idx}">
+            <td style="padding:0.25rem;">
+                <select class="form-select el-product" data-idx="${idx}" style="width:100%;">${opts}</select>
+            </td>
+            <td style="padding:0.25rem;">
+                <input class="form-input el-spec" data-idx="${idx}" list="el-specs-${idx}" placeholder="규격" style="width:100%;" autocomplete="off">
+                <datalist id="el-specs-${idx}"></datalist>
+            </td>
+            <td style="padding:0.25rem;">
+                <input class="form-input el-qty" data-idx="${idx}" type="number" min="0" step="any" placeholder="수량" style="width:100%; text-align:right;">
+            </td>
+            <td style="padding:0.25rem; width:2.5rem; text-align:center;" class="el-unit">${esc((products[0] || {}).unit || '')}</td>
+            <td style="padding:0.25rem; width:3rem;">
+                <button type="button" class="btn btn-secondary el-del" data-idx="${idx}" style="padding:0.25rem 0.5rem; font-size:0.75rem;">삭제</button>
+            </td>
+        </tr>`;
+}
+
+// 품목이 바뀌면 그 품목의 규격 후보와 단위를 따라 바꾼다
+function syncEntryLine(idx) {
+    const row = document.getElementById(`el-${idx}`);
+    if (!row) return;
+    const product = row.querySelector('.el-product').value;
+    const list = document.getElementById(`el-specs-${idx}`);
+    if (list) list.innerHTML = (specsByProduct[product] || []).map(s => `<option value="${esc(s)}"></option>`).join('');
+    const unitCell = row.querySelector('.el-unit');
+    if (unitCell) unitCell.textContent = (productMeta[product] || {}).unit || '';
+}
+
+function addEntryLine() {
+    const tbody = document.getElementById('entryLines');
+    if (!tbody) return;
+    const idx = ++entryLineSeq;
+    tbody.insertAdjacentHTML('beforeend', entryLineHtml(idx));
+    const row = document.getElementById(`el-${idx}`);
+    row.querySelector('.el-product').addEventListener('change', () => syncEntryLine(idx));
+    row.querySelector('.el-del').addEventListener('click', () => {
+        if (document.querySelectorAll('#entryLines tr').length <= 1) return;  // 마지막 한 줄은 남긴다
+        row.remove();
+    });
+    syncEntryLine(idx);
+}
+
+function openEntryModal() {
+    if (!products.length) {
+        CommonUtils.showAlert('품목마스터를 아직 못 불러왔습니다. 새로고침 후 다시 시도해 주세요.', 'error');
+        return;
+    }
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const lastWorker = localStorage.getItem('invEntryWorker') || '';
+
+    const html = `
+        <style>
+            #commonModal .form-input, #commonModal .form-select { padding: 0.4rem 0.5rem; font-size: 0.8125rem; }
+            #entryLines td { border-bottom: 1px solid #f3f4f6; }
+        </style>
+        <div style="display:flex; flex-wrap:wrap; gap:0.75rem; margin-bottom:1rem;">
+            <div><label class="form-label">일자</label><input id="enDate" type="date" class="form-input" value="${todayStr}" style="width:10rem;"></div>
+            <div><label class="form-label">구분</label>
+                <select id="enKind" class="form-select" style="width:8rem;">
+                    <option value="출고">출고</option>
+                    <option value="입고">입고</option>
+                    <option value="생산">생산</option>
+                </select>
+            </div>
+            <div><label class="form-label">거래구분</label>
+                <select id="enTrade" class="form-select" style="width:8rem;">
+                    <option value="관급">관급</option>
+                    <option value="사급">사급</option>
+                    <option value="">(없음)</option>
+                </select>
+            </div>
+            <div style="flex:1 1 16rem;"><label class="form-label">거래처</label>
+                <input id="enPartner" class="form-input" list="enPartnerList" placeholder="현장명 또는 매입처" style="width:100%;" autocomplete="off">
+                <datalist id="enPartnerList">${partnerSuggestions().map(p => `<option value="${esc(p)}"></option>`).join('')}</datalist>
+            </div>
+            <div style="width:8rem;"><label class="form-label">작업자</label><input id="enWorker" class="form-input" value="${esc(lastWorker)}" style="width:100%;"></div>
+        </div>
+
+        <table style="width:100%; border-collapse:collapse; font-size:0.8125rem;">
+            <thead>
+                <tr>
+                    <th style="text-align:left; padding:0.25rem; width:9rem; font-size:0.75rem; color:#4b5563;">품목</th>
+                    <th style="text-align:left; padding:0.25rem; font-size:0.75rem; color:#4b5563;">규격</th>
+                    <th style="text-align:left; padding:0.25rem; width:8rem; font-size:0.75rem; color:#4b5563;">수량</th>
+                    <th style="padding:0.25rem;"></th>
+                    <th style="padding:0.25rem;"></th>
+                </tr>
+            </thead>
+            <tbody id="entryLines"></tbody>
+        </table>
+        <button type="button" id="enAddLine" class="btn btn-secondary" style="margin-top:0.5rem; font-size:0.8125rem;">줄 추가</button>
+
+        <p id="enMsg" style="margin-top:0.75rem; font-size:0.8125rem; color:#6b7280;">출고는 여러 규격을 한 전표로 넣을 수 있습니다. 처음 쓰는 규격은 품목마스터에 자동 등록됩니다.</p>
+
+        <div style="display:flex; justify-content:flex-end; gap:0.5rem; margin-top:1rem; padding-top:1rem; border-top:1px solid #e5e7eb;">
+            <button type="button" id="enCancel" class="btn btn-secondary">취소</button>
+            <button type="button" id="enSave" class="btn btn-primary">저장</button>
+        </div>`;
+
+    CommonUtils.showModal('입출고 입력', html, { width: '820px' });
+
+    entryLineSeq = 0;
+    addEntryLine();
+    document.getElementById('enAddLine').addEventListener('click', addEntryLine);
+    document.getElementById('enCancel').addEventListener('click', closeEntryModal);
+    document.getElementById('enSave').addEventListener('click', saveEntry);
+}
+
+function closeEntryModal() {
+    CommonUtils.closeModal();
+}
+
+async function saveEntry() {
+    const msg = document.getElementById('enMsg');
+    const saveBtn = document.getElementById('enSave');
+    const setMsg = (text, err) => { if (msg) { msg.textContent = text; msg.style.color = err ? '#dc2626' : '#6b7280'; } };
+
+    const dateVal = document.getElementById('enDate').value;
+    if (!dateVal) return setMsg('일자를 입력해 주세요.', true);
+    const d = dateVal.split('-');
+    const 일자 = `${Number(d[0])}. ${Number(d[1])}. ${Number(d[2])}`;   // 원장 표기와 동일하게
+
+    const 구분 = document.getElementById('enKind').value;
+    const 거래구분 = document.getElementById('enTrade').value;
+    const 거래처 = document.getElementById('enPartner').value.trim();
+    const 작업자 = document.getElementById('enWorker').value.trim();
+
+    const lines = [];
+    let bad = '';
+    document.querySelectorAll('#entryLines tr').forEach((row, i) => {
+        const 품목 = row.querySelector('.el-product').value;
+        const 규격 = row.querySelector('.el-spec').value.trim();
+        const qtyRaw = row.querySelector('.el-qty').value.trim();
+        if (!규격 && !qtyRaw) return;                       // 빈 줄은 무시
+        if (!규격) { bad = bad || `${i + 1}번째 줄 규격이 비었습니다.`; return; }
+        const 수량 = Number(qtyRaw);
+        if (!qtyRaw || !isFinite(수량) || 수량 <= 0) { bad = bad || `${i + 1}번째 줄 수량을 확인해 주세요.`; return; }
+        lines.push({ 품목, 규격, 수량 });
+    });
+    if (bad) return setMsg(bad, true);
+    if (!lines.length) return setMsg('품목 줄을 하나 이상 채워 주세요.', true);
+    if (구분 === '출고' && !거래처) return setMsg('출고는 거래처를 적어 주세요.', true);
+
+    saveBtn.disabled = true;
+    setMsg('저장 중…');
+    try {
+        const res = await callGAS('createInventoryEntry', { 일자, 구분, 거래구분, 거래처, 작업자, lines });
+        if (!res.ok) { saveBtn.disabled = false; return setMsg('저장 실패: ' + (res.error || '알 수 없는 오류'), true); }
+
+        localStorage.setItem('invEntryWorker', 작업자);
+        applySavedEntry(res.전표번호, { 일자, 구분, 거래구분, 거래처, 작업자 }, lines);
+        closeEntryModal();
+        const extra = (res.신규규격 || []).length ? ` · 새 규격 등록: ${res.신규규격.join(', ')}` : '';
+        CommonUtils.showAlert(`저장했습니다 — 전표 ${res.전표번호} · ${res.행수}줄${extra}`, 'success');
+    } catch (e) {
+        saveBtn.disabled = false;
+        setMsg('저장 실패: ' + e.message, true);
+    }
+}
+
+// 방금 저장한 건을 화면에 바로 반영한다.
+// 시트 퍼블리시 CSV는 몇 분 늦게 갱신되므로, 다시 불러오지 않고 메모리 원장에 같은 내용을 넣는다.
+function applySavedEntry(slip, head, lines) {
+    const parts = head.일자.split('.').map(s => parseInt(s.trim()));
+    lines.forEach(l => {
+        const unit = (productMeta[l.품목] || {}).unit || '';
+        ledger.push({
+            slip, date: head.일자, year: parts[0], month: parts[1],
+            kind: head.구분, trade: head.거래구분, product: l.품목, spec: l.규격,
+            qty: l.수량, sign: head.구분 === '출고' ? -1 : 1,
+            unit, partner: head.거래처, worker: head.작업자, ts: ''
+        });
+        if (!specsByProduct[l.품목]) specsByProduct[l.품목] = [];
+        if (specsByProduct[l.품목].indexOf(l.규격) < 0) specsByProduct[l.품목].push(l.규격);
+    });
+    renderInventory();
 }
 
 // 생산·입고/출고 현황 팝업 — 원장을 그대로 최신순으로 보여준다
