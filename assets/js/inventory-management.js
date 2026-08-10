@@ -1,5 +1,5 @@
 // assets/js/inventory-management.js
-console.log('%c[inventory-management.js v=20260810g — 세로형 원장 기준 + 입출고 다품목 입력 화면(한 전표에 여러 규격)]', 'color:#4b5563; font-weight:bold');
+console.log('%c[inventory-management.js v=20260810h — 세로형 원장 기준 + 입출고 다품목 입력 화면(한 전표에 여러 규격)]', 'color:#4b5563; font-weight:bold');
 
 // ⚠️ 2026-08-10 구조 변경 — 재고 시트가 가로형(품목별 전용 컬럼)에서 세로형 원장으로 바뀌었다.
 //    옛 구조는 출고 규격을 하나 더 받을 때마다 컬럼을 늘려야 했고(잔해 컬럼 14개), 헤더에 단위 표기가
@@ -585,6 +585,7 @@ function openEntryModal() {
                     <option value="출고">출고</option>
                     <option value="입고">입고</option>
                     <option value="생산">생산</option>
+                    <option value="기초재고">기초재고</option>
                 </select>
             </div>
             <div style="flex:1 1 16rem;"><label class="form-label">거래처</label>
@@ -612,7 +613,7 @@ function openEntryModal() {
         </table>
         <button type="button" id="enAddLine" class="btn btn-secondary" style="margin-top:0.5rem; font-size:0.8125rem;">줄 추가</button>
 
-        <p id="enMsg" style="margin-top:0.75rem; font-size:0.8125rem; color:#6b7280;">출고는 여러 규격을 한 전표로 넣을 수 있습니다. 처음 쓰는 규격은 품목마스터에 자동 등록됩니다.</p>
+        <p id="enMsg" style="margin-top:0.75rem; font-size:0.8125rem; color:#6b7280;">출고는 여러 규격을 한 전표로 넣을 수 있습니다. 처음 쓰는 규격은 품목마스터에 자동 등록됩니다. 기초재고는 새 품목을 장부에 처음 올릴 때만 씁니다.</p>
 
         <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; margin-top:1rem; padding-top:1rem; border-top:1px solid #e5e7eb;">
             <a href="${INV_SHEET_URL}" target="_blank" rel="noopener" class="btn btn-secondary">구글 시트 열기</a>
