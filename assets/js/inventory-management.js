@@ -1,22 +1,22 @@
 // assets/js/inventory-management.js
-console.log('%c[inventory-management.js v=20260729d — 시트 헤더 단위표기 대응 + 식생매트 단위 ㎡ + 품목별 재고 카드 + 품목 구간 소계(생산·출고·주문·재고) + 구분선 강화]', 'color:#4b5563; font-weight:bold');
+console.log('%c[inventory-management.js v=20260810a — 세로형 원장 기준 전환(1행=1건) + 품목마스터에서 품목·단위·용어 로드]', 'color:#4b5563; font-weight:bold');
 
-let rawInventoryData = [];
+// ⚠️ 2026-08-10 구조 변경 — 재고 시트가 가로형(품목별 전용 컬럼)에서 세로형 원장으로 바뀌었다.
+//    옛 구조는 출고 규격을 하나 더 받을 때마다 컬럼을 늘려야 했고(잔해 컬럼 14개), 헤더에 단위 표기가
+//    붙으면 그 열이 통째로 0이 되는 사고가 있었다. 이제 컬럼은 11개로 고정이고 건수는 행으로 늘어난다.
+//    → PRODUCT_CONFIG(컬럼명 하드코딩)·resolveSheetColumns(헤더 보정)·uniqueHeaders 우회가 전부 사라졌다.
+//    품목·규격·단위·용어(생산/입고)의 단일 진실은 시트의 '품목마스터' 탭이다. 물품 추가 = 마스터에 한 줄.
+
+let ledger = [];        // 원장 정규화 행 — { date, year, month, kind, trade, product, spec, qty, sign, unit, partner, worker, ts, slip }
+let products = [];      // 품목 목록(마스터 순서) — [{ name, unit, inLabel }]
+let productMeta = {};   // 품목명 → { unit, inLabel }
 let inventorySections = [];   // [{ product, cfg, rows, totals }] — 표시 단위(품목별 구간)
 let currentSortColumn = 'name'; // 기본 정렬 컬럼
 let currentSortOrder = 'asc';   // 기본 정렬 순서
 
-// 제품별 시트 컬럼·단위·라벨 설정 — 보행매트=생산(m) / 식생매트=생산(㎡) / 고정핀=입고(개) / 방초매트=입고(롤)
-// ⚠️ 단위는 시트에 없다(방초매트 '입고량 (롤)'만 헤더에 표기). 여기 값이 표시 단위의 단일 진실 — 형우 확인분.
-// ⚠️ 방초매트 컬럼은 시트에 접두사가 없다('입고 규격'·'출고 규격'). '출고처'는 고정핀과 이름이 겹쳐
-//    uniqueHeaders 파싱으로 뒤에 오는 방초매트 쪽이 '출고처_2'가 된다.
-const PRODUCT_CONFIG = {
-    '보행매트': { specIn: '보행매트 생산 규격', qtyIn: '보행매트 생산량', specOut: '보행매트 출고 규격', qtyOut: '보행매트 출고량', dest: '보행매트 출고처', unit: 'm', inLabel: '생산' },
-    '식생매트': { specIn: '식생매트 생산 규격', qtyIn: '식생매트 생산량', specOut: '식생매트 출고 규격', qtyOut: '식생매트 출고량', dest: '식생매트 출고처', unit: '㎡', inLabel: '생산' },
-    '방초매트': { specIn: '입고 규격', qtyIn: '입고량 (롤)', specOut: '출고 규격', qtyOut: '출고량 (롤)', dest: '출고처_2', unit: '롤', inLabel: '입고' },
-    '고정핀':   { specIn: '고정핀 입고 규격', qtyIn: '고정핀 입고량', specOut: '고정핀 출고 규격', qtyOut: '고정핀 출고량', dest: '출고처', unit: '개', inLabel: '입고' }
-};
-const PRODUCT_ORDER = ['보행매트', '식생매트', '방초매트', '고정핀'];
+// 재고 시트 — '원장'(1행=1건) + '품목마스터'(품목·규격·단위·용어)
+const INV_BASE = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQkA2tLZxiYFn8w0T8WF8-ibHFWAILyq44LRkHaTtAP9E55Fvc3U6gAYeL9i_ZJjinUYmP1X3-LGHNm/pub';
+const INV_TABS = { ledger: 1144177955, master: 1353758990 };
 
 // 주문관리 시트 — 주문확정 물량(배송 전 주문)의 품명별 수량. 재고 표 '주문 수량' 열의 원천.
 const ORDER_DB_BASE = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRum7_WBDKTJSA8B1ATxqpd3BtvjXnPLNQXuMpQsx0q4HVmwm_-JRQLCjy-FrYryIBPuxYkhV7F1nWq/pub';
@@ -29,36 +29,19 @@ function getSelectedProduct() {
 }
 function getActiveProducts() {
     const sel = getSelectedProduct();
-    return sel === 'all' ? PRODUCT_ORDER.slice() : [sel];
+    return sel === 'all' ? products.map(p => p.name) : [sel];
 }
 function getProductConfig(product) {
-    return PRODUCT_CONFIG[product || getSelectedProduct()] || PRODUCT_CONFIG['보행매트'];
+    const name = product || getSelectedProduct();
+    return productMeta[name] || products[0] || { unit: '', inLabel: '입고' };
 }
 
-// 시트 헤더에 단위 표기가 붙어도(예: '식생매트 생산량' → '식생매트 생산량 (m²)') 계속 읽히도록
-// 실제 헤더에 맞춰 컬럼명을 한 번 보정한다. 정확 일치 우선, 없으면 끝의 괄호 표기를 떼고 맞춘다.
-// ⚠️ 이 보정이 없으면 헤더에 단위를 붙이는 순간 그 열이 통째로 0이 되고 재고가 음수로 흐른다(2026-07-29 실제 발생).
-function resolveSheetColumns(sampleRow) {
-    const keys = Object.keys(sampleRow || {});
-    if (!keys.length) return;
-
-    const norm = s => String(s).replace(/\s*\([^)]*\)\s*$/, '').replace(/\s+/g, ' ').trim();
-    const byNorm = new Map();
-    keys.forEach(k => { const n = norm(k); if (!byNorm.has(n)) byNorm.set(n, k); });
-
-    Object.entries(PRODUCT_CONFIG).forEach(([product, cfg]) => {
-        ['specIn', 'qtyIn', 'specOut', 'qtyOut', 'dest'].forEach(field => {
-            const want = cfg[field];
-            if (keys.includes(want)) return;
-            const hit = byNorm.get(norm(want));
-            if (hit) {
-                console.log(`[재고] 컬럼명 보정: ${product}.${field} '${want}' → '${hit}'`);
-                cfg[field] = hit;
-            } else {
-                console.warn(`[재고] 시트에서 컬럼을 못 찾음: ${product}.${field} '${want}' — 이 열은 0으로 집계됩니다`);
-            }
-        });
-    });
+// 공통 CSV 로더 — 퍼블리시 URL의 탭 하나를 읽어 객체 배열로
+async function loadTab(base, gid) {
+    const url = `${base}?gid=${gid}&single=true&output=csv&_=${Date.now()}`;
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`시트 HTTP ${res.status} (gid ${gid})`);
+    return window.sheetsAPI.parseCSV(await res.text());
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -68,14 +51,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('filterMonth').value = today.getMonth() + 1;
     document.getElementById('filterProductType').value = 'all';
 
-    // 2. 데이터 로드 — 재고 시트(필수) + 주문확정 물량(선택, 실패해도 표는 정상)
+    // 2. 데이터 로드 — 원장·품목마스터(필수) + 주문확정 물량(선택, 실패해도 표는 정상)
     try {
-        const [inv] = await Promise.all([
-            window.sheetsAPI.loadCSVData('inventory', { uniqueHeaders: true }),
+        const [rawLedger, rawMaster] = await Promise.all([
+            loadTab(INV_BASE, INV_TABS.ledger),
+            loadTab(INV_BASE, INV_TABS.master),
             loadOrderQty()
         ]);
-        rawInventoryData = inv;
-        resolveSheetColumns(rawInventoryData[0]);
+        buildProducts(rawMaster, rawLedger);
+        buildLedger(rawLedger);
+        populateProductFilter();
         renderInventory();
     } catch (error) {
         console.error("데이터 로드 실패:", error);
@@ -92,17 +77,93 @@ document.addEventListener('DOMContentLoaded', async () => {
     syncMonthState();
 });
 
+// ===== 품목마스터 =====
+// 품목 순서·단위·용어(생산/입고)의 단일 진실. 마스터에 없는 품목이 원장에 있으면 뒤에 이어 붙인다
+// (마스터 등록을 잊어도 재고가 화면에서 사라지지 않게 — 대신 콘솔에 알린다).
+function buildProducts(rawMaster, rawLedger) {
+    products = [];
+    productMeta = {};
+    const put = (name, unit, inLabel) => {
+        if (!name || productMeta[name]) return;
+        const meta = { name, unit: unit || '', inLabel: inLabel || '입고' };
+        productMeta[name] = meta;
+        products.push(meta);
+    };
+
+    (rawMaster || []).forEach(r => {
+        if (String(r['사용'] || 'Y').trim().toUpperCase() === 'N') return;
+        put(String(r['품목'] || '').trim(), String(r['단위'] || '').trim(), String(r['입고구분'] || '').trim());
+    });
+
+    (rawLedger || []).forEach(r => {
+        const name = String(r['품목'] || '').trim();
+        if (!name || productMeta[name]) return;
+        console.warn(`[재고] 품목마스터에 없는 품목이 원장에 있습니다: '${name}' — 마스터에 한 줄 추가해 주세요`);
+        put(name, String(r['단위'] || '').trim(), '입고');
+    });
+
+    console.log('[재고] 품목', products.map(p => `${p.name}(${p.unit}·${p.inLabel})`).join(' / '));
+}
+
+// 품목 드롭다운을 마스터 기준으로 다시 만든다 — 물품이 늘어도 HTML을 안 고치게
+function populateProductFilter() {
+    const sel = document.getElementById('filterProductType');
+    if (!sel || !products.length) return;
+    const keep = sel.value;
+    sel.innerHTML = '<option value="all">전체</option>' +
+        products.map(p => `<option value="${p.name}">${p.name}</option>`).join('');
+    sel.value = products.some(p => p.name === keep) ? keep : 'all';
+}
+
+// ===== 원장 =====
+// 구분: 생산·입고·기초재고 = 들어옴(+) / 출고 = 나감(-). 그 외 값은 콘솔에 알리고 들어옴으로 본다.
+function buildLedger(rows) {
+    ledger = [];
+    const unknownKinds = new Set();
+
+    (rows || []).forEach(r => {
+        const product = String(r['품목'] || '').trim();
+        const spec = String(r['규격'] || '').trim();
+        const qty = Number(String(r['수량'] || '').replace(/,/g, ''));
+        // 수량 0인 행(기초재고 0 등)도 들고 간다 — 규격은 존재한다는 뜻이고, 재고 0이면 표에서 어차피 빠진다
+        if (!product || !spec || !Number.isFinite(qty)) return;
+
+        const dateStr = String(r['일자'] || '').trim();   // 형식: 2026. 1. 19
+        const parts = dateStr.split('.').map(s => parseInt(s.trim()));
+        if (parts.length < 3 || isNaN(parts[0]) || isNaN(parts[1])) return;
+
+        const kind = String(r['구분'] || '').trim();
+        const isOut = kind === '출고';
+        if (!isOut && kind !== '생산' && kind !== '입고' && kind !== '기초재고') unknownKinds.add(kind);
+
+        ledger.push({
+            slip: String(r['전표번호'] || '').trim(),
+            date: dateStr,
+            year: parts[0],
+            month: parts[1],
+            kind: kind || '입고',
+            trade: String(r['거래구분'] || '').trim(),
+            product,
+            spec,
+            qty,
+            sign: isOut ? -1 : 1,
+            unit: String(r['단위'] || '').trim() || (productMeta[product] || {}).unit || '',
+            partner: String(r['거래처'] || '').trim(),
+            worker: String(r['작업자'] || '').trim(),
+            ts: String(r['타임스탬프'] || '').trim()
+        });
+    });
+
+    if (unknownKinds.size) console.warn(`[재고] 모르는 구분 값(들어옴으로 계산): ${[...unknownKinds].join(', ')}`);
+    console.log(`[재고] 원장 ${ledger.length}건 로드`);
+}
+
 // ===== 주문확정 물량 =====
 // 주문관리 칸반의 '주문' 단계와 동일 기준: 세금계산서 없음 + 배송 없음 = 아직 나가지 않은 확정 물량.
 async function loadOrderQty() {
     try {
         const [deals, dealLines, deliveries] = await Promise.all(
-            ['deals', 'dealLines', 'deliveries'].map(async k => {
-                const url = `${ORDER_DB_BASE}?gid=${ORDER_DB_TABS[k]}&single=true&output=csv&_=${Date.now()}`;
-                const res = await fetch(url, { cache: 'no-store' });
-                if (!res.ok) throw new Error(`주문 시트 HTTP ${res.status} (${k})`);
-                return window.sheetsAPI.parseCSV(await res.text());
-            })
+            ['deals', 'dealLines', 'deliveries'].map(k => loadTab(ORDER_DB_BASE, ORDER_DB_TABS[k]))
         );
 
         // 배송 시트는 아직 '거래번호' 컬럼이 남아 있어 양쪽 키 모두 인정 (주문관리와 동일)
@@ -165,7 +226,7 @@ function renderInventory() {
     const selectedYear = document.getElementById('filterYear').value;
     // P2-3: 연도='전체'면 월 무시 → 세 카드 기준 기간 일치(전체 누적)
     const selectedMonth = selectedYear === 'all' ? 'all' : document.getElementById('filterMonth').value;
-    const products = getActiveProducts();
+    const activeProducts = getActiveProducts();
     const isAll = getSelectedProduct() === 'all';
 
     // 컬럼 헤더·버튼 라벨 — 제품마다 용어가 다름(생산/입고)
@@ -175,9 +236,9 @@ function renderInventory() {
     if (wkBtn) wkBtn.textContent = isAll ? '생산·입고 현황' : `${getProductConfig().inLabel} 현황`;
 
     // 품목별 집계 → 표시용 구간(section) 생성
-    inventorySections = products.map(product => {
-        const cfg = PRODUCT_CONFIG[product];
-        const agg = aggregateProduct(cfg, selectedYear, selectedMonth);
+    inventorySections = activeProducts.map(product => {
+        const cfg = getProductConfig(product);
+        const agg = aggregateProduct(product, selectedYear, selectedMonth);
 
         // 카드 합계는 전체 규격 기준(활동 총량), 표는 재고 있는 규격만
         const totals = agg.reduce((t, it) => {
@@ -212,41 +273,25 @@ function sectionSubtotal(sec) {
 }
 
 // 한 품목의 규격별 (기간 생산·입고 / 기간 출고 / 선택 시점까지 누적 재고) 집계
-function aggregateProduct(cfg, selectedYear, selectedMonth) {
+function aggregateProduct(product, selectedYear, selectedMonth) {
     const map = new Map();
-    const init = name => {
-        if (!map.has(name)) map.set(name, { prodInPeriod: 0, outInPeriod: 0, stock: 0 });
-        return map.get(name);
-    };
 
-    rawInventoryData.forEach(row => {
-        const dateStr = row['일자'] || ""; // 형식: 2026. 1. 19
-        const parts = dateStr.split('.').map(s => parseInt(s.trim()));
-        if (parts.length < 3) return;
+    ledger.forEach(e => {
+        if (e.product !== product) return;
 
-        const year = parts[0];
-        const month = parts[1];
+        const inPeriod = (selectedYear === 'all' || e.year == selectedYear)
+            && (selectedMonth === 'all' || e.month == selectedMonth);
+        const upToNow = checkIsBeforeOrEqual(e.year, e.month, selectedYear, selectedMonth);
+        if (!inPeriod && !upToNow) return;
 
-        const isSelectedYear = (selectedYear === 'all' || year == selectedYear);
-        const isSelectedMonth = (selectedMonth === 'all' || month == selectedMonth);
-        const isBeforeOrEqualSelection = checkIsBeforeOrEqual(year, month, selectedYear, selectedMonth);
+        if (!map.has(e.spec)) map.set(e.spec, { prodInPeriod: 0, outInPeriod: 0, stock: 0 });
+        const d = map.get(e.spec);
 
-        const prodItem = (row[cfg.specIn] || '').trim();
-        const prodQty = parseInt(row[cfg.qtyIn]) || 0;
-        const outItem = (row[cfg.specOut] || '').trim();
-        const outQty = parseInt(row[cfg.qtyOut]) || 0;
-
-        if (prodItem) {
-            const data = init(prodItem);
-            if (isSelectedYear && isSelectedMonth) data.prodInPeriod += prodQty;
-            if (isBeforeOrEqualSelection) data.stock += prodQty;
+        if (inPeriod) {
+            if (e.sign > 0) d.prodInPeriod += e.qty;
+            else d.outInPeriod += e.qty;
         }
-
-        if (outItem) {
-            const data = init(outItem);
-            if (isSelectedYear && isSelectedMonth) data.outInPeriod += outQty;
-            if (isBeforeOrEqualSelection) data.stock -= outQty;
-        }
+        if (upToNow) d.stock += e.sign * e.qty;
     });
 
     return Array.from(map.entries()).map(([name, d]) => ({
@@ -421,50 +466,18 @@ function checkIsBeforeOrEqual(y, m, selY, selM) {
     return false;
 }
 
-// 주간 현황 팝업 표시
+// 생산·입고/출고 현황 팝업 — 원장을 그대로 최신순으로 보여준다
 let allActivities = []; // 전체 활동 데이터
 let currentPage = 0; // 현재 페이지
 const itemsPerPage = 5; // 페이지당 표시할 항목 수
 let weeklyTitle = '생산 현황'; // 모달 제목 — 페이지네이션 재렌더 시 유지
 
 function showWeeklyStatus() {
-    const products = getActiveProducts();
+    const activeProducts = new Set(getActiveProducts());
     const isAll = getSelectedProduct() === 'all';
     weeklyTitle = isAll ? '생산·입고 현황' : `${getProductConfig().inLabel} 현황`;
 
-    // 최근 데이터 수집 (생산·입고 + 출고 통합) — 제품별 컬럼·용어·단위가 다르므로 행마다 들고 다닌다
-    allActivities = [];
-
-    products.forEach(product => {
-        const cfg = PRODUCT_CONFIG[product];
-
-        rawInventoryData.forEach(row => {
-            const dateStr = row['일자'] || "";
-            const worker = row['작업자'] || "-";
-            const timestamp = row['타임스탬프'] || "";
-
-            const prodSpec = (row[cfg.specIn] || '').trim();
-            const prodQty = parseInt(row[cfg.qtyIn]) || 0;
-            if (prodSpec && prodQty > 0) {
-                allActivities.push({
-                    date: dateStr, timestamp, worker,
-                    product, type: cfg.inLabel, spec: prodSpec, qty: prodQty,
-                    unit: cfg.unit, destination: '-'
-                });
-            }
-
-            const outSpec = (row[cfg.specOut] || '').trim();
-            const outQty = parseInt(row[cfg.qtyOut]) || 0;
-            const outDest = (row[cfg.dest] || '').trim() || '-';
-            if (outSpec && outQty > 0) {
-                allActivities.push({
-                    date: dateStr, timestamp, worker,
-                    product, type: '출고', spec: outSpec, qty: outQty,
-                    unit: cfg.unit, destination: outDest
-                });
-            }
-        });
-    });
+    allActivities = ledger.filter(e => activeProducts.has(e.product));
 
     // 날짜 기준으로 최신순 정렬 (년.월.일 형식 파싱)
     allActivities.sort((a, b) => {
@@ -481,7 +494,7 @@ function showWeeklyStatus() {
 
         // 날짜가 같으면 타임스탬프로 비교
         if (dateA.getTime() === dateB.getTime()) {
-            return (b.timestamp || '').localeCompare(a.timestamp || '');
+            return (b.ts || '').localeCompare(a.ts || '');
         }
 
         return dateB - dateA; // 최신순 (내림차순)
@@ -512,7 +525,7 @@ function renderWeeklyStatusModal() {
                         <th class="px-4 py-3 text-center" style="width: 80px;">구분</th>
                         <th class="px-3 py-3 text-center" style="width: 120px;">규격</th>
                         <th class="px-4 py-3 text-center" style="width: 100px;">수량</th>
-                        <th class="px-4 py-3 text-center" style="min-width: 200px;">출고처</th>
+                        <th class="px-4 py-3 text-center" style="min-width: 200px;">거래처</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -529,12 +542,12 @@ function renderWeeklyStatusModal() {
             tableHTML += `
                 <tr>
                     <td class="px-3 py-3 text-center">${item.date}</td>
-                    <td class="px-4 py-3 text-center">${item.worker}</td>
+                    <td class="px-4 py-3 text-center">${item.worker || '-'}</td>
                     <td class="px-4 py-3 text-center">${item.product}</td>
-                    <td class="px-4 py-3 text-center font-semibold" style="color: ${item.type === '출고' ? '#dc2626' : '#2563eb'};">${item.type}</td>
+                    <td class="px-4 py-3 text-center font-semibold" style="color: ${item.sign < 0 ? '#dc2626' : '#2563eb'};">${item.kind}</td>
                     <td class="px-3 py-3 text-center">${item.spec}</td>
                     <td class="px-4 py-3 text-center font-medium">${CommonUtils.formatNumber(item.qty)}${item.unit}</td>
-                    <td class="px-4 py-3 text-center">${item.destination}</td>
+                    <td class="px-4 py-3 text-center">${item.partner || '-'}</td>
                 </tr>
             `;
         });
