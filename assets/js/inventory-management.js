@@ -1,5 +1,5 @@
 // assets/js/inventory-management.js
-console.log('%c[inventory-management.js v=20260810c — 세로형 원장 기준 + 입출고 다품목 입력 화면(한 전표에 여러 규격)]', 'color:#4b5563; font-weight:bold');
+console.log('%c[inventory-management.js v=20260810d — 세로형 원장 기준 + 입출고 다품목 입력 화면(한 전표에 여러 규격)]', 'color:#4b5563; font-weight:bold');
 
 // ⚠️ 2026-08-10 구조 변경 — 재고 시트가 가로형(품목별 전용 컬럼)에서 세로형 원장으로 바뀌었다.
 //    옛 구조는 출고 규격을 하나 더 받을 때마다 컬럼을 늘려야 했고(잔해 컬럼 14개), 헤더에 단위 표기가
@@ -18,6 +18,8 @@ let currentSortOrder = 'asc';   // 기본 정렬 순서
 // 재고 시트 — '원장'(1행=1건) + '품목마스터'(품목·규격·단위·용어)
 const INV_BASE = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQkA2tLZxiYFn8w0T8WF8-ibHFWAILyq44LRkHaTtAP9E55Fvc3U6gAYeL9i_ZJjinUYmP1X3-LGHNm/pub';
 const INV_TABS = { ledger: 1144177955, master: 1353758990 };
+// 입력 팝업에서 시트를 바로 열 수 있게 — 원장 탭으로 바로 간다
+const INV_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1Ecsw-FvIyZMk2UqK47y3G89djiKQ-8RxcKZRFdMdwHY/edit#gid=1144177955';
 
 // 주문관리 시트 — 주문확정 물량(배송 전 주문)의 품명별 수량. 재고 표 '주문 수량' 열의 원천.
 const ORDER_DB_BASE = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRum7_WBDKTJSA8B1ATxqpd3BtvjXnPLNQXuMpQsx0q4HVmwm_-JRQLCjy-FrYryIBPuxYkhV7F1nWq/pub';
@@ -613,9 +615,12 @@ function openEntryModal() {
 
         <p id="enMsg" style="margin-top:0.75rem; font-size:0.8125rem; color:#6b7280;">출고는 여러 규격을 한 전표로 넣을 수 있습니다. 처음 쓰는 규격은 품목마스터에 자동 등록됩니다.</p>
 
-        <div style="display:flex; justify-content:flex-end; gap:0.5rem; margin-top:1rem; padding-top:1rem; border-top:1px solid #e5e7eb;">
-            <button type="button" id="enCancel" class="btn btn-secondary">취소</button>
-            <button type="button" id="enSave" class="btn btn-primary">저장</button>
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; margin-top:1rem; padding-top:1rem; border-top:1px solid #e5e7eb;">
+            <a href="${INV_SHEET_URL}" target="_blank" rel="noopener" class="btn btn-secondary">구글 시트 열기</a>
+            <span style="display:flex; gap:0.5rem;">
+                <button type="button" id="enCancel" class="btn btn-secondary">취소</button>
+                <button type="button" id="enSave" class="btn btn-primary">저장</button>
+            </span>
         </div>`;
 
     CommonUtils.showModal('입출고 입력', html, { width: '820px' });
