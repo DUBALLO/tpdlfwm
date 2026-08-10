@@ -1,5 +1,5 @@
 // assets/js/inventory-management.js
-console.log('%c[inventory-management.js v=20260810f — 세로형 원장 기준 + 입출고 다품목 입력 화면(한 전표에 여러 규격)]', 'color:#4b5563; font-weight:bold');
+console.log('%c[inventory-management.js v=20260810g — 세로형 원장 기준 + 입출고 다품목 입력 화면(한 전표에 여러 규격)]', 'color:#4b5563; font-weight:bold');
 
 // ⚠️ 2026-08-10 구조 변경 — 재고 시트가 가로형(품목별 전용 컬럼)에서 세로형 원장으로 바뀌었다.
 //    옛 구조는 출고 규격을 하나 더 받을 때마다 컬럼을 늘려야 했고(잔해 컬럼 14개), 헤더에 단위 표기가
@@ -93,9 +93,10 @@ function buildProducts(rawMaster, rawLedger) {
         if (!specsByProduct[name]) specsByProduct[name] = [];
         if (specsByProduct[name].indexOf(spec) < 0) specsByProduct[name].push(spec);
     };
-    const put = (name, unit, inLabel) => {
+    const put = (name, unit, inLabel, order) => {
         if (!name || productMeta[name]) return;
-        const meta = { name, unit: unit || '', inLabel: inLabel || '입고' };
+        const n = Number(order);
+        const meta = { name, unit: unit || '', inLabel: inLabel || '입고', order: isFinite(n) && order !== '' ? n : 9999 };
         productMeta[name] = meta;
         products.push(meta);
     };
@@ -103,7 +104,7 @@ function buildProducts(rawMaster, rawLedger) {
     (rawMaster || []).forEach(r => {
         if (String(r['사용'] || 'Y').trim().toUpperCase() === 'N') return;
         const name = String(r['품목'] || '').trim();
-        put(name, String(r['단위'] || '').trim(), String(r['입고구분'] || '').trim());
+        put(name, String(r['단위'] || '').trim(), String(r['입고구분'] || '').trim(), String(r['순서'] || '').trim());
         addSpec(name, String(r['규격'] || '').trim());
     });
 
@@ -117,7 +118,12 @@ function buildProducts(rawMaster, rawLedger) {
         addSpec(name, String(r['규격'] || '').trim());
     });
 
-    console.log('[재고] 품목', products.map(p => `${p.name}(${p.unit}·${p.inLabel})`).join(' / '));
+    // 품목 표시 순서는 마스터의 '순서' 열이 정한다 — 시트를 어떻게 정렬해도 화면은 안 흔들린다.
+    // 순서가 비었거나 마스터에 없는 품목은 9999로 뒤에 붙고, 동점이면 마스터에 나온 차례를 지킨다.
+    products.forEach((p, i) => { p.seq = i; });
+    products.sort((a, b) => (a.order - b.order) || (a.seq - b.seq));
+
+    console.log('[재고] 품목', products.map(p => `${p.order}.${p.name}(${p.unit}·${p.inLabel})`).join(' / '));
 }
 
 // 품목 드롭다운을 마스터 기준으로 다시 만든다 — 물품이 늘어도 HTML을 안 고치게
