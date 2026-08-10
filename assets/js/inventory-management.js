@@ -1,5 +1,5 @@
 // assets/js/inventory-management.js
-console.log('%c[inventory-management.js v=20260810b — 세로형 원장 기준 + 입출고 다품목 입력 화면(한 전표에 여러 규격)]', 'color:#4b5563; font-weight:bold');
+console.log('%c[inventory-management.js v=20260810c — 세로형 원장 기준 + 입출고 다품목 입력 화면(한 전표에 여러 규격)]', 'color:#4b5563; font-weight:bold');
 
 // ⚠️ 2026-08-10 구조 변경 — 재고 시트가 가로형(품목별 전용 컬럼)에서 세로형 원장으로 바뀌었다.
 //    옛 구조는 출고 규격을 하나 더 받을 때마다 컬럼을 늘려야 했고(잔해 컬럼 14개), 헤더에 단위 표기가
@@ -483,6 +483,7 @@ function checkIsBeforeOrEqual(y, m, selY, selM) {
 // 한 전표에 여러 규격을 담는다 — 출고는 섞여 나가므로 [품목·규격·수량] 줄을 계속 늘릴 수 있어야 한다.
 // 저장하면 GAS가 한 전표번호(M-YYMMDD-NN)로 원장에 N행을 넣는다.
 const GAS_WRITE_URL = 'https://script.google.com/macros/s/AKfycbxM128rPA6TSQltBIOuiB2zGQB--n9S-V93jNLGxTLJZnwBpUMfgiG1BMZDwCXufW2f/exec';
+const WORKERS = ['박형우', '염태윤'];   // 입력 화면 작업자 목록
 let entryLineSeq = 0;
 
 async function callGAS(action, payload) {
@@ -589,7 +590,11 @@ function openEntryModal() {
                 <input id="enPartner" class="form-input" list="enPartnerList" placeholder="현장명 또는 매입처" style="width:100%;" autocomplete="off">
                 <datalist id="enPartnerList">${partnerSuggestions().map(p => `<option value="${esc(p)}"></option>`).join('')}</datalist>
             </div>
-            <div style="width:8rem;"><label class="form-label">작업자</label><input id="enWorker" class="form-input" value="${esc(lastWorker)}" style="width:100%;"></div>
+            <div style="width:8rem;"><label class="form-label">작업자</label>
+                <select id="enWorker" class="form-select" style="width:100%;">
+                    ${WORKERS.map(w => `<option value="${esc(w)}"${w === lastWorker ? ' selected' : ''}>${esc(w)}</option>`).join('')}
+                </select>
+            </div>
         </div>
 
         <table style="width:100%; border-collapse:collapse; font-size:0.8125rem;">
