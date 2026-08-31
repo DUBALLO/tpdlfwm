@@ -63,11 +63,12 @@
     .c-price { width: 10%; text-align: right; padding-right: 10px; }
     .c-amount { width: 13%; text-align: right; padding-right: 10px; font-weight: 500; }
     .c-tax { width: 11%; text-align: right; padding-right: 10px; color: var(--ink-light); }
-    body.관급 .c-no { width: 6%; }
-    body.관급 .c-name { width: 23%; }
-    body.관급 .c-spec { width: 24%; }
-    body.관급 .c-unit { width: 7%; }
-    body.관급 .c-remark { display: none; }
+    /* 부가세 포함 견적(관급 전부 + 사급 포함) — 세액 열 없이 넓게 */
+    body.vat-included .c-no { width: 6%; }
+    body.vat-included .c-name { width: 23%; }
+    body.vat-included .c-spec { width: 24%; }
+    body.vat-included .c-unit { width: 7%; }
+    body.vat-included .c-remark { display: none; }
     .summary-section { display: flex; border-top: 3px solid var(--accent); padding-top: 3px; background: #fff; }
     .summary-left { flex: 1; padding: 14px 16px; }
     .summary-right { width: 300px; flex-shrink: 0; }
@@ -147,8 +148,12 @@
     function render(d) {
       document.title = `견적서 - ${d.거래.거래처 || ''}`;
       document.body.classList.add(d.구분);
+      // 세액 열·요약 3줄은 '부가세 별도'일 때만. 포함이면 관급과 동일하게 합계금액 한 줄.
+      // (구버전 GAS 응답에 부가세포함이 없으면 관급=포함으로 간주해 옛 동작 유지)
+      const vatIncluded = d.부가세포함 !== undefined ? !!d.부가세포함 : (d.구분 === '관급');
+      if (vatIncluded) document.body.classList.add('vat-included');
 
-      const itemHeaderRemark = d.구분 === '사급'
+      const itemHeaderRemark = !vatIncluded
         ? '<th class="c-tax">부가세</th>'
         : '<th class="c-remark">비고</th>';
       const itemHeaderName = d.구분 === '관급'
@@ -159,7 +164,7 @@
         const codePart = (d.구분 === '관급' && it.물품식별번호)
           ? ` <span class="c-code">(${escapeHtml(it.물품식별번호)})</span>`
           : '';
-        const remarkOrTax = d.구분 === '사급'
+        const remarkOrTax = !vatIncluded
           ? `<td class="c-tax">${fmt(it.부가세)}</td>`
           : `<td class="c-remark"></td>`;
         return `
@@ -176,7 +181,7 @@
         `;
       }).join('');
 
-      const summaryRows = d.구분 === '사급'
+      const summaryRows = !vatIncluded
         ? `
           <tr><td class="sum-label">공급대가</td><td class="sum-value">₩ ${fmt(d.공급대가)}</td></tr>
           <tr><td class="sum-label">부가세</td><td class="sum-value">₩ ${fmt(d.부가세합계)}</td></tr>
