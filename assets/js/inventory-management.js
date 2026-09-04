@@ -1,5 +1,5 @@
 // assets/js/inventory-management.js
-console.log('%c[inventory-management.js v=20260810h — 세로형 원장 기준 + 입출고 다품목 입력 화면(한 전표에 여러 규격)]', 'color:#4b5563; font-weight:bold');
+console.log('%c[inventory-management.js v=20260904a — 세로형 원장 기준 + 입출고 다품목 입력 + 시트 반영 대기 전표 병합]', 'color:#4b5563; font-weight:bold');
 
 // ⚠️ 2026-08-10 구조 변경 — 재고 시트가 가로형(품목별 전용 컬럼)에서 세로형 원장으로 바뀌었다.
 //    옛 구조는 출고 규격을 하나 더 받을 때마다 컬럼을 늘려야 했고(잔해 컬럼 14개), 헤더에 단위 표기가
@@ -63,6 +63,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         ]);
         buildProducts(rawMaster, rawLedger);
         buildLedger(rawLedger);
+        mergePendingEntries(rawLedger);
         populateProductFilter();
         renderInventory();
     } catch (error) {
@@ -676,6 +677,8 @@ async function saveEntry() {
         if (!res.ok) { saveBtn.disabled = false; return setMsg('저장 실패: ' + (res.error || '알 수 없는 오류'), true); }
 
         localStorage.setItem('invEntryWorker', 작업자);
+        // 새로고침·다른 페이지(주문관리)에서도 살아남게 버퍼에 적재 — CSV에 뜨면 자동으로 빠진다
+        if (window.InvPending) window.InvPending.add(res.전표번호, { 일자, 구분, 거래구분, 거래처, 작업자 }, lines);
         applySavedEntry(res.전표번호, { 일자, 구분, 거래구분, 거래처, 작업자 }, lines);
         closeEntryModal();
         const extra = (res.신규규격 || []).length ? ` · 새 규격 등록: ${res.신규규격.join(', ')}` : '';
@@ -684,6 +687,30 @@ async function saveEntry() {
         saveBtn.disabled = false;
         setMsg('저장 실패: ' + e.message, true);
     }
+}
+
+// 퍼블리시 CSV가 아직 못 따라온 전표를 원장에 얹는다(전표번호가 CSV에 뜨면 버퍼에서 자동 제거).
+// 저장 직후 새로고침해도 방금 넣은 건이 사라지지 않게 하는 장치.
+function mergePendingEntries(rawLedger) {
+    const known = new Set((rawLedger || []).map(r => String(r['전표번호'] || '').trim()).filter(Boolean));
+    const pending = window.InvPending ? window.InvPending.take(known) : [];
+    if (!pending.length) return;
+    pending.forEach(e => {
+        const parts = String(e.일자 || '').split('.').map(x => parseInt(x.trim()));
+        if (parts.length < 3 || isNaN(parts[0]) || isNaN(parts[1])) return;
+        if (!e.품목 || !e.규격) return;
+        ledger.push({
+            slip: e.slip, date: e.일자, year: parts[0], month: parts[1],
+            kind: e.구분 || '입고', trade: e.거래구분 || '',
+            product: e.품목, spec: e.규격, qty: e.수량,
+            sign: e.구분 === '출고' ? -1 : 1,
+            unit: (productMeta[e.품목] || {}).unit || '',
+            partner: e.거래처 || '', worker: e.작업자 || '', ts: ''
+        });
+        if (!specsByProduct[e.품목]) specsByProduct[e.품목] = [];
+        if (specsByProduct[e.품목].indexOf(e.규격) < 0) specsByProduct[e.품목].push(e.규격);
+    });
+    console.log('[재고] 시트 반영 대기 전표 병합', { 행수: pending.length, 전표: [...new Set(pending.map(e => e.slip))] });
 }
 
 // 방금 저장한 건을 화면에 바로 반영한다.

@@ -177,6 +177,65 @@ function parseProductIdentName(fullName) {
     return { model: '-', spec: '-', raw };
 }
 
+// ===== 미반영 전표 버퍼 (InvPending) =====
+// 시트에 쓴 재고 입출고가 퍼블리시 CSV에 뜨기까지 몇 분 걸린다. 그 사이 재고 현황을 새로고침하거나
+// 주문관리로 넘어가면 방금 넣은 건이 사라져 보인다(주문확정 물량의 재고 열이 대표적).
+// → 저장한 원장 행을 localStorage에 잠깐 들고 있다가, CSV에 그 전표번호가 뜨면 버린다.
+// 재고를 쓰는 페이지는 같은 오리진이라 버퍼를 공유한다.
+const INV_PENDING_KEY = 'invPendingLedger_v1';
+const INV_PENDING_TTL_MS = 24 * 60 * 60 * 1000;   // 하루 지나도 CSV에 안 뜨면 버린다(이중계상 방지)
+
+function invPendingRead() {
+    try {
+        const raw = localStorage.getItem(INV_PENDING_KEY);
+        const arr = raw ? JSON.parse(raw) : [];
+        return Array.isArray(arr) ? arr : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function invPendingWrite(arr) {
+    try {
+        localStorage.setItem(INV_PENDING_KEY, JSON.stringify(arr));
+    } catch (e) {
+        console.warn('[재고] 미반영 전표 저장 실패 — 버퍼 없이 진행', e);
+    }
+}
+
+// 방금 저장한 전표를 버퍼에 넣는다. lines = [{품목, 규격, 수량}]
+function invPendingAdd(slip, head, lines) {
+    if (!slip || !lines || !lines.length) return;
+    const savedAt = Date.now();
+    const rest = invPendingRead().filter(e => e.slip !== slip);   // 같은 전표 재저장 시 덮어쓰기
+    lines.forEach(l => rest.push({
+        slip,
+        savedAt,
+        일자: head.일자 || '',
+        구분: head.구분 || '',
+        거래구분: head.거래구분 || '',
+        거래처: head.거래처 || '',
+        작업자: head.작업자 || '',
+        품목: l.품목 || '',
+        규격: l.규격 || '',
+        수량: Number(l.수량) || 0
+    }));
+    invPendingWrite(rest);
+}
+
+// CSV에 이미 뜬 전표·유효기간 지난 전표를 걷어내고 남은 것만 돌려준다(같은 호출에서 버퍼도 정리).
+// knownSlips = CSV에서 읽은 전표번호 Set(또는 배열).
+function invPendingTake(knownSlips) {
+    const known = knownSlips instanceof Set ? knownSlips : new Set(knownSlips || []);
+    const now = Date.now();
+    const all = invPendingRead();
+    const live = all.filter(e => !known.has(e.slip) && (now - (e.savedAt || 0)) < INV_PENDING_TTL_MS);
+    if (live.length !== all.length) invPendingWrite(live);
+    return live;
+}
+
+window.InvPending = { add: invPendingAdd, take: invPendingTake, read: invPendingRead };
+
 window.CommonUtils = {
     formatCurrency,
     parseSignedAmount,

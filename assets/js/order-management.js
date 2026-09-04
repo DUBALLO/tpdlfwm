@@ -1,5 +1,5 @@
 // 주문 관리 — 데이터 로드 + 칸반 렌더링 + 새 거래 입력 폼 (Phase 3-3(B))
-console.log('%c[order-management.js v=20260702b 로드됨 — 주문확정 물량 재고 수량 열(고정핀 포함·부족 빨강)]', 'color:#10b981; font-weight:bold');
+console.log('%c[order-management.js v=20260904a 로드됨 — 주문확정 물량 재고 열을 세로형 원장 기준으로 교체]', 'color:#10b981; font-weight:bold');
 
 const ORDER_DB_BASE = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRum7_WBDKTJSA8B1ATxqpd3BtvjXnPLNQXuMpQsx0q4HVmwm_-JRQLCjy-FrYryIBPuxYkhV7F1nWq/pub';
 const ORDER_SHEET_ID = '13-TkPYeGAaXjPrVxdy_vTf83tvKxqolkK7rfgE4e-1o';
@@ -15,16 +15,16 @@ const ORDER_DB_TABS = {
     quoteLines:    1517835444
 };
 
-// 재고 시트 (생산·출고 로그 → 현재 재고). 재고 CSV publish (재고 현황 페이지와 동일 소스)
-const INVENTORY_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQkA2tLZxiYFn8w0T8WF8-ibHFWAILyq44LRkHaTtAP9E55Fvc3U6gAYeL9i_ZJjinUYmP1X3-LGHNm/pub?output=csv';
-// 재고 시트 컬럼(제품별) — 매트=생산, 고정핀=입고. 재고 현황 페이지와 동일 스키마
-const INVENTORY_COLS = {
-    '보행매트': { specIn: '보행매트 생산 규격', qtyIn: '보행매트 생산량', specOut: '보행매트 출고 규격', qtyOut: '보행매트 출고량' },
-    '식생매트': { specIn: '식생매트 생산 규격', qtyIn: '식생매트 생산량', specOut: '식생매트 출고 규격', qtyOut: '식생매트 출고량' },
-    '고정핀':   { specIn: '고정핀 입고 규격', qtyIn: '고정핀 입고량', specOut: '고정핀 출고 규격', qtyOut: '고정핀 출고량' }
-};
-// { 품목: Map(모델코드 → 현재재고 = 전기간 (생산·입고)-출고 누적) } — 주문 품명(모델코드)과 매칭
+// 재고 시트 — '원장' 탭(1행=1건). 재고 현황 페이지(inventory-management.js)와 같은 소스·같은 계산.
+// ⚠️ 2026-09-04 교체: 여기서 읽던 퍼블리시 기본 탭은 옛 폼 응답시트(가로형)였다. 2026-08-10 재고가
+//    세로형 원장으로 옮겨간 뒤로 그 시트에는 폼 생산분만 들어오고 PWA 입출고 입력은 안 들어와서,
+//    주문확정 물량의 재고 열이 재고 현황과 갈라졌다(DB-3512 40 vs 710 등). 원장 하나만 본다.
+const INVENTORY_BASE = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQkA2tLZxiYFn8w0T8WF8-ibHFWAILyq44LRkHaTtAP9E55Fvc3U6gAYeL9i_ZJjinUYmP1X3-LGHNm/pub';
+const INVENTORY_LEDGER_GID = 1144177955;
+// { 품목: Map(규격=모델코드 → 현재재고 = 전기간 (생산·입고·기초재고)-출고 누적) } — 주문 품명과 매칭
 let inventoryStock = {};
+// 규격 → 현재재고 (품목 불일치 입력 폴백. 고정핀을 매트 품목으로 적은 경우 등)
+let inventoryStockAny = new Map();
 
 // 단가표 시트 ([DB] 견적서)
 const PRICE_DB_BASE = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSiwdVAyqzkq7AxvqvU3fiyQBZA7S55xsf_U0arxNDG95YPzgsdjncUJOM2NGBtu5XVmpkJokwuaNNN/pub';
@@ -192,40 +192,56 @@ async function loadAll() {
     return out;
 }
 
-// 재고 현황 로드 — 품목별 모델코드 현재 재고(전기간 생산-출고 누적). 실패해도 주문표는 정상(재고 '-').
+// 재고 현황 로드 — 품목·규격별 현재 재고(전기간 누적). 실패해도 주문표는 정상(재고 '-').
+// 계산 규칙은 재고 현황 페이지와 동일: 구분 '출고'만 −, 생산·입고·기초재고는 +.
 async function loadInventoryStock() {
     try {
-        const url = `${INVENTORY_CSV_URL}&_=${Date.now()}`;
+        const url = `${INVENTORY_BASE}?gid=${INVENTORY_LEDGER_GID}&single=true&output=csv&_=${Date.now()}`;
         const res = await fetch(url, { cache: 'no-store' });
         if (!res.ok) throw new Error(`재고 HTTP ${res.status}`);
-        const rows = parseCSV(await res.text());   // [{헤더:값}]
+        const rows = parseCSV(await res.text());   // [{헤더:값}] — 헤더 이름으로 읽으므로 열 순서 무관
         const map = {};
-        Object.keys(INVENTORY_COLS).forEach(pt => { map[pt] = new Map(); });
-        rows.forEach(r => {
-            Object.entries(INVENTORY_COLS).forEach(([pt, c]) => {
-                const ps = (r[c.specIn] || '').trim();
-                const pq = parseInt(r[c.qtyIn]) || 0;
-                const os = (r[c.specOut] || '').trim();
-                const oq = parseInt(r[c.qtyOut]) || 0;
-                if (ps) map[pt].set(ps, (map[pt].get(ps) || 0) + pq);
-                if (os) map[pt].set(os, (map[pt].get(os) || 0) - oq);
-            });
-        });
+        const any = new Map();
+        const add = (품목, 규격, qty, 구분) => {
+            if (!품목 || !규격 || !Number.isFinite(qty)) return;
+            const sign = String(구분 || '').trim() === '출고' ? -1 : 1;
+            if (!map[품목]) map[품목] = new Map();
+            map[품목].set(규격, (map[품목].get(규격) || 0) + sign * qty);
+            any.set(규격, (any.get(규격) || 0) + sign * qty);
+        };
+        rows.forEach(r => add(
+            String(r['품목'] || '').trim(),
+            String(r['규격'] || '').trim(),
+            Number(String(r['수량'] || '').replace(/,/g, '')),
+            r['구분']
+        ));
+
+        // 재고 현황 페이지에서 방금 넣은 입출고는 퍼블리시 CSV가 몇 분 늦다 — 그 사이 버퍼로 메운다.
+        // CSV에 전표번호가 뜨면 버퍼에서 자동으로 빠지므로 이중계상되지 않는다.
+        const known = new Set(rows.map(r => String(r['전표번호'] || '').trim()).filter(Boolean));
+        const pending = window.InvPending ? window.InvPending.take(known) : [];
+        pending.forEach(e => add(e.품목, e.규격, Number(e.수량) || 0, e.구분));
+
         inventoryStock = map;
+        inventoryStockAny = any;
+        console.log('[주문관리] 재고 원장 로드', {
+            원장행: rows.length, 품목수: Object.keys(map).length, 규격수: any.size,
+            반영대기: pending.length
+        });
     } catch (e) {
         console.warn('[주문관리] 재고 로드 실패 — 재고 열은 - 로 표시', e);
         inventoryStock = {};
+        inventoryStockAny = new Map();
     }
 }
 
 // 주문 행(품목·품명=모델코드)에 해당하는 현재 재고. 매칭 없으면 null.
-// 고정핀 등 부품은 주문 품목이 매트여도 재고는 '고정핀' 시트에 있으므로 고정핀 맵으로 폴백(코드 무충돌: DB-Px vs DB-숫자).
+// 품목이 어긋난 입력(고정핀·부품을 매트 품목으로 적은 경우 등)은 규격(모델코드)으로 폴백.
 function lookupStock(품목, 품명) {
     if (!품명) return null;
     const m = inventoryStock[품목];
     if (m && m.has(품명)) return m.get(품명);
-    const pin = inventoryStock['고정핀'];
-    if (pin && pin.has(품명)) return pin.get(품명);
+    if (inventoryStockAny.has(품명)) return inventoryStockAny.get(품명);
     return null;
 }
 
