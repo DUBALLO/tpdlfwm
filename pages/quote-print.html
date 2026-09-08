@@ -145,6 +145,13 @@
       s.classList.add('error');
     }
 
+    // 이 건만 라벨 빼기: 주소에 ?라벨=off (또는 label=off) → 제목 아래 '관급자재/사급자재' 줄 생략.
+    // 시트 데이터와 무관하므로 견적을 수정·저장해도 영향 없다.
+    const HIDE_DOC_TYPE = (() => {
+      const p = new URLSearchParams(location.search);
+      return (p.get('라벨') || p.get('label') || '').toLowerCase() === 'off';
+    })();
+
     function render(d) {
       document.title = `견적서 - ${d.거래.거래처 || ''}`;
       document.body.classList.add(d.구분);
@@ -200,7 +207,7 @@
         <div class="page">
           <div class="doc-title">
             <h1>견 적 서</h1>
-            <div class="doc-type">${escapeHtml(d.구분)}자재</div>
+            ${HIDE_DOC_TYPE ? '' : `<div class="doc-type">${escapeHtml(d.구분)}자재</div>`}
           </div>
 
           <div class="header-section">
