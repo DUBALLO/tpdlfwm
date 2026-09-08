@@ -216,7 +216,7 @@
               <div class="client">${escapeHtml(d.거래.거래처)}<span class="honorific">귀하</span></div>
               <dl>
                 <dt>사업명</dt><dd>${escapeHtml(d.거래.사업명)}</dd>
-                <dt>인도조건</dt><dd>${escapeHtml(d.거래.인도조건)}</dd>
+                ${String(d.거래.인도조건 == null ? '' : d.거래.인도조건).trim() ? `<dt>인도조건</dt><dd>${escapeHtml(d.거래.인도조건)}</dd>` : ''}
               </dl>
               <div class="statement">아래와 같이 견적합니다.</div>
             </div>
