@@ -177,7 +177,25 @@ function applyFilters() {
         return true;
     }).sort(compareRecords);
     renderTable();
+    updatePrintHeader({ nature, year, item, gubun, org: document.getElementById('orgFilter').value.trim() });
     updateSortIndicators();
+}
+
+// 인쇄 머리: 품목은 제목에, 나머지 조건은 제목 아래 줄에. 건수는 구분별로.
+function updatePrintHeader({ nature, year, item, gubun, org }) {
+    document.getElementById('printTitle').textContent = `두발로(주) ${item !== 'all' ? item + ' ' : ''}납품실적`;
+    const parts = [];
+    if (year !== 'all') parts.push(`${year}년`);
+    if (nature !== 'all') parts.push(nature);
+    if (gubun !== 'all') parts.push(gubun);
+    if (org) parts.push(`수요기관 '${org}'`);
+    document.getElementById('printSub').textContent = parts.length ? `(${parts.join(' · ')})` : '';
+
+    const cnt = {};
+    filteredRecords.forEach(r => { cnt[r.구분] = (cnt[r.구분] || 0) + 1; });
+    const breakdown = Object.keys(cnt).sort((a, b) => (GUBUN_ORDER[a] || 99) - (GUBUN_ORDER[b] || 99)).map(g => `${g} ${cnt[g]}`);
+    document.getElementById('printSummary').textContent =
+        `총 ${filteredRecords.length.toLocaleString()}건` + (breakdown.length > 1 ? ` (${breakdown.join(' · ')})` : '');
 }
 
 function toggleSort(key) {
