@@ -3,41 +3,43 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>관급 납품실적 - 두발로</title>
+    <title>납품실적 - 두발로</title>
     <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#10b981">
     <link rel="apple-touch-icon" href="/icons/icon-192.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="../assets/css/common.css" rel="stylesheet">
-    <script src="../assets/js/sheets-api.js?v=20260729a"></script>
     <style>
         body { font-family: 'Noto Sans KR', system-ui, sans-serif; }
-        .badge { display: inline-block; padding: 2px 8px; border-radius: 9999px; font-size: 11px; font-weight: 500; }
+        /* 표 모양은 구글 시트 '납품실적(인쇄용)_양식' 시트1과 맞춤 */
         .data-table { width: 100%; border-collapse: collapse; }
-        .data-table th, .data-table td { border-bottom: 1px solid #e5e7eb; vertical-align: middle; }
-        .data-table thead th { background-color: #f9fafb; font-weight: 600; font-size: 12px; color: #374151; padding: 10px 12px; text-align: left; }
+        .data-table th, .data-table td { border: 1px solid #d1d5db; vertical-align: middle; padding: 6px 10px; }
+        .data-table thead th { background-color: #4472c4; color: #fff; font-weight: 600; font-size: 12px; text-align: center; }
         .data-table thead th.sortable { cursor: pointer; user-select: none; }
-        .data-table thead th.sortable:hover { background-color: #f3f4f6; }
+        .data-table thead th.sortable:hover { background-color: #3a62ad; }
         .sort-indicator { font-size: 10px; }
+        .data-table thead th .sort-indicator.text-gray-300 { color: #c7d2fe; }
+        .data-table thead th .sort-indicator.text-gray-700 { color: #fff; }
         .data-table tbody td { font-size: 13px; color: #1f2937; }
         .data-table tbody tr:hover { background-color: #f9fafb; }
+        .print-title, .print-date { display: none; }
 
         @media print {
             @page { size: A4 portrait; margin: 1.2cm 1cm; }
             body { background: #fff; }
             body * { visibility: hidden; }
             .printable-area, .printable-area * { visibility: visible; }
-            .printable-area { position: absolute; left: 0; top: 0; width: 100%; }
+            .printable-area { position: absolute; left: 0; top: 0; width: 100%; padding: 0 !important; }
             .no-print { display: none !important; }
             nav, footer { display: none !important; }
-            .data-table { font-size: 9pt; }
-            .data-table th, .data-table td { padding: 4px 6px; border-color: #888 !important; color: #000 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .screen-header { display: none !important; }
+            .print-title { display: block; text-align: center; font-size: 20pt; font-weight: 700; margin-bottom: 2px; }
+            .print-date { display: block; text-align: right; font-size: 9pt; margin-bottom: 4px; }
+            .table-wrap { box-shadow: none !important; border-radius: 0 !important; }
+            .data-table th, .data-table td { font-size: 8.5pt; padding: 3px 6px; border-color: #000 !important; color: #000 !important; }
+            .data-table thead th { background-color: #4472c4 !important; color: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
             .data-table thead { display: table-header-group; }
             .data-table tr { page-break-inside: avoid; }
-            .badge { background: #fff !important; color: #000 !important; border: 1px solid #888; padding: 1px 4px; }
-            .print-header { border-bottom: 2px solid #111; padding-bottom: 8px; margin-bottom: 12px; }
-            .print-header h1 { font-size: 18pt; font-weight: 700; }
-            .print-header .meta { font-size: 9pt; color: #333; }
         }
     </style>
 </head>
@@ -48,7 +50,7 @@
                 <div class="flex items-center space-x-4">
                     <a href="../index.html" class="text-lg font-semibold text-gray-900">두발로 대시보드</a>
                     <span class="text-gray-400">|</span>
-                    <span class="text-emerald-600 font-medium">관급 납품실적</span>
+                    <span class="text-emerald-600 font-medium">납품실적</span>
                 </div>
                 <a href="../index.html" class="nav-link">홈</a>
             </div>
@@ -56,16 +58,31 @@
     </nav>
 
     <main class="max-w-6xl mx-auto px-4 py-8 printable-area">
-        <div class="print-header mb-6">
-            <h1 class="text-2xl font-bold text-gray-900">두발로 주식회사 관급 납품실적</h1>
-            <div class="meta text-sm text-gray-500 mt-1">
-                출력일: <span id="reportDate">—</span> · 총 <span id="totalCount">0</span>건
-                · 세금계산서 발행 기준
+        <div class="screen-header mb-6">
+            <h1 class="text-2xl font-bold text-gray-900">납품실적</h1>
+            <div class="text-sm text-gray-500 mt-1">
+                총 <span id="totalCount">0</span>건 · 주문관리 기준, 세금계산서 발행분 · 년도는 주문일자 기준
             </div>
         </div>
+        <div class="print-title">두발로(주) 납품실적</div>
+        <div class="print-date"><span id="reportDate"></span></div>
 
         <div class="bg-white rounded-lg shadow-sm p-4 mb-4 no-print">
             <div class="flex flex-wrap items-end gap-4">
+                <div>
+                    <label class="form-label">관급/사급</label>
+                    <select id="natureFilter" class="form-select">
+                        <option value="all">전체</option>
+                        <option value="관급">관급</option>
+                        <option value="사급">사급</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label">품목</label>
+                    <select id="itemFilter" class="form-select">
+                        <option value="all">전체</option>
+                    </select>
+                </div>
                 <div>
                     <label class="form-label">년도</label>
                     <select id="yearFilter" class="form-select">
@@ -76,31 +93,41 @@
                     <label class="form-label">구분</label>
                     <select id="gubunFilter" class="form-select">
                         <option value="all">전체</option>
-                        <option value="군">군</option>
-                        <option value="지방정부">지방정부</option>
                         <option value="공기업">공기업</option>
-                        <option value="국가기관">국가기관</option>
-                        <option value="교육기관">교육기관</option>
+                        <option value="군">군</option>
+                        <option value="기관">기관</option>
+                        <option value="사급">사급</option>
+                        <option value="지자체">지자체</option>
                     </select>
                 </div>
+                <div>
+                    <label class="form-label">수요기관명</label>
+                    <input id="orgFilter" type="text" class="form-input" placeholder="예: 양주시" style="width: 160px;">
+                </div>
+                <button id="resetFilterBtn" class="px-3 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 text-sm">
+                    조건 초기화
+                </button>
                 <div class="ml-auto flex gap-2">
                     <button id="clearSortBtn" style="display:none;" class="px-3 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 text-sm">
                         정렬 초기화
                     </button>
-                    <button id="printBtn" class="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 text-sm font-medium">
-                        🖨 인쇄 / PDF 저장
+                    <button id="printBtn" class="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded hover:bg-gray-50 text-sm font-medium">
+                        인쇄 / PDF 저장
+                    </button>
+                    <button id="exportBtn" class="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 text-sm font-medium">
+                        구글 시트로 뽑기
                     </button>
                 </div>
             </div>
         </div>
 
-        <div class="bg-white rounded-lg shadow-sm overflow-hidden">
+        <div class="bg-white rounded-lg shadow-sm overflow-hidden table-wrap">
             <table class="data-table">
                 <thead>
                     <tr>
-                        <th style="width: 70px;" class="sortable" data-sort-key="년도">년도<span class="sort-indicator text-gray-300"> ⇅</span></th>
-                        <th style="width: 90px;" class="sortable" data-sort-key="구분">구분<span class="sort-indicator text-gray-300"> ⇅</span></th>
-                        <th style="width: 28%;" class="sortable" data-sort-key="수요기관명">수요기관명<span class="sort-indicator text-gray-300"> ⇅</span></th>
+                        <th style="width: 72px;" class="sortable" data-sort-key="구분">구분<span class="sort-indicator text-gray-300"> ⇅</span></th>
+                        <th style="width: 72px;" class="sortable" data-sort-key="년도">년도<span class="sort-indicator text-gray-300"> ⇅</span></th>
+                        <th style="width: 36%;" class="sortable" data-sort-key="수요기관명">수요기관명<span class="sort-indicator text-gray-300"> ⇅</span></th>
                         <th class="sortable" data-sort-key="계약명">계약명<span class="sort-indicator text-gray-300"> ⇅</span></th>
                     </tr>
                 </thead>
@@ -117,8 +144,8 @@
         </div>
     </footer>
 
-    <script src="../assets/js/common.js?v=20260506g"></script>
-    <script src="../assets/js/delivery-records.js?v=20260506g"></script>
+    <script src="../assets/js/common.js?v=20260904a"></script>
+    <script src="../assets/js/delivery-records.js?v=20260915a"></script>
     <script>
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('/service-worker.js').catch(() => {});
