@@ -14,6 +14,7 @@
   - 내역: 빈칸 없이 실제 품목 수만큼, 각 줄 1행(줄바꿈 금지)
   - 비고: 배송 비고 + "배차 N · 배송구분 · 차종" (차량 식별)
   - 하단 문구: 인도용 "정히 인도함" / 인수용 "정히 인수함"
+  - 서명칸은 인도용만. 인수용은 서명칸 대신 회사 줄 아래 "현장 인수자께 전달" 안내 (기사가 송장을 받아오지 않도록)
   - 현 단계 시안: 파라미터 없이 열면 내장 샘플로 렌더
 
 [2] URL 파라미터 계약
@@ -92,6 +93,8 @@
     .co-logo img { height: 7.5mm; width: auto; }
     .co-info { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 0.6mm;
       padding: 2.4mm 4mm; border-left: 1px solid var(--soft); font-size: 9.5pt; color: #2c2c2c; }
+
+    .handover-note { text-align: center; font-size: 10.5pt; font-weight: 700; letter-spacing: 0.04em; color: #1d1d1d; padding: 2.2mm 0 0.5mm; }
 
     .cutline { border: 0; border-top: 1.4px dotted #9aa0a8; margin: 7mm 0; }
 
@@ -246,7 +249,7 @@
             <tr class="meta remark"><th class="lbl">비 고</th><td class="val" colspan="4">${escapeHtml(f.비고)}</td></tr>
           </table>
           <div class="affirm">${affirm}</div>
-          <div class="sign-wrap"><div class="sign-box"><span>서명</span></div></div>
+          ${isDeliver ? '<div class="sign-wrap"><div class="sign-box"><span>서명</span></div></div>' : ''}
           <div class="co-bar">
             <div class="co-logo"><img src="/assets/img/logo.png" alt="${escapeHtml(SUPPLIER.상호)}"></div>
             <div class="co-info">
@@ -254,6 +257,7 @@
               <div>${escapeHtml(SUPPLIER.전화)}</div>
             </div>
           </div>
+          ${isDeliver ? '' : '<div class="handover-note">이 송장은 현장 인수자께 전달해 주세요.</div>'}
         </section>`;
     }
 
