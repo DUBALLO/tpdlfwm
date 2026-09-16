@@ -1,5 +1,5 @@
 // 주문 관리 — 데이터 로드 + 칸반 렌더링 + 새 거래 입력 폼 (Phase 3-3(B))
-console.log('%c[order-management.js v=20260904a 로드됨 — 주문확정 물량 재고 열을 세로형 원장 기준으로 교체]', 'color:#10b981; font-weight:bold');
+console.log('%c[order-management.js v=20260916a 로드됨 — 용역계약체결통보서 XML 입력·계약형태 번호 판별]', 'color:#10b981; font-weight:bold');
 
 const ORDER_DB_BASE = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRum7_WBDKTJSA8B1ATxqpd3BtvjXnPLNQXuMpQsx0q4HVmwm_-JRQLCjy-FrYryIBPuxYkhV7F1nWq/pub';
 const ORDER_SHEET_ID = '13-TkPYeGAaXjPrVxdy_vTf83tvKxqolkK7rfgE4e-1o';
@@ -407,7 +407,7 @@ function renderCard(deal) {
     return `
         <div class="deal-card ${cls}" data-deal-id="${escapeHtml(deal.주문번호)}">
             <div class="deal-num">${escapeHtml(orderDate)}${dueLabel ? ` <span style="color:${dueColor}; font-weight:600;">${dueLabel}</span>` : ''}</div>
-            <div class="deal-org">${escapeHtml(deal.org?.이름 || deal.거래처ID || '-')}</div>
+            <div class="deal-org">${escapeHtml(deal.org?.이름 || deal.거래처ID || '-')}${serviceContractTag(deal.납품요구번호)}</div>
             <div class="deal-name">${escapeHtml(deal.사업명 || '')}</div>
             <div class="deal-meta">
                 <span class="deal-amount">${amount}</span>
@@ -849,6 +849,7 @@ function showDealModal(dealId) {
             <div><span style="color:#6b7280">거래처</span> ${escapeHtml(deal.org?.이름 || '-')}</div>
             <div><span style="color:#6b7280">사업명</span> ${escapeHtml(deal.사업명 || '-')}</div>
             <div><span style="color:#6b7280">관련견적</span> ${quoteRefCell}</div>
+            ${deal.납품요구번호 ? `<div style="grid-column:span 2"><span style="color:#6b7280">계약형태</span> ${escapeHtml(contractTypeOf(deal.납품요구번호) || '-')} <span style="color:#6b7280; font-family:monospace; font-size:0.8125rem;">${escapeHtml(deal.납품요구번호)}</span></div>` : ''}
             <div><span style="color:#6b7280">납품기한</span> ${escapeHtml(deal.납품기한 || '-')} ${deal.납품기한 ? `<span style="color:#991b1b; font-weight:600;">${dueDayLabel(deal.납품기한)}</span>` : ''}</div>
             <div><span style="color:#6b7280">수요처</span> ${escapeHtml(deal.reqHandler?.부서 || '')} ${escapeHtml(deal.reqHandler?.이름 || '-')}${deal.reqHandler?.직함 ? ' ' + escapeHtml(deal.reqHandler.직함) : ''}</div>
             <div><span style="color:#6b7280">연락처</span> ${deal.reqHandler?.전화 ? '<a href="tel:' + escapeHtml(deal.reqHandler.전화) + '" style="color:#2563eb; text-decoration:underline;">' + escapeHtml(deal.reqHandler.전화) + '</a>' : '-'}${deal.reqHandler?.전화2 ? ' · <a href="tel:' + escapeHtml(deal.reqHandler.전화2) + '" style="color:#2563eb; text-decoration:underline;">' + escapeHtml(deal.reqHandler.전화2) + '</a>' : ''}</div>
@@ -1181,7 +1182,7 @@ function renderCompletedList(deals) {
     tbody.innerHTML = slice.map(d => `
         <tr data-deal-id="${escapeHtml(d.주문번호)}">
             <td style="white-space:nowrap;">${escapeHtml(parseOrderDate(d.주문번호))}</td>
-            <td style="text-align:center;">${natureBadge(d.주문번호, d.주문성격)}</td>
+            <td style="text-align:center;">${natureBadge(d.주문번호, d.주문성격)}${serviceContractTag(d.납품요구번호)}</td>
             <td>${escapeHtml(d.org?.이름 || d.거래처ID || '-')}</td>
             <td>${escapeHtml(d.사업명 || '-')}</td>
             <td style="text-align:right; color:#059669; font-weight:600;">${CommonUtils.formatCurrency(d.total)}</td>
@@ -1275,6 +1276,20 @@ function natureLabel(주문번호, 주문성격) {
     if (prefix === 'G' || nat === '관급' || nat === '매출-관급') return '관급';
     if (prefix === 'B' || nat === '사급' || nat === '매출-사급') return '사급';
     return '비매출';
+}
+
+// 계약형태 — 나라장터 번호로 판별 (별도 시트 열 없음). R26TB… = 납품요구, R26TA… = 용역계약
+function contractTypeOf(번호) {
+    const m = String(번호 || '').trim().match(/^R\d{2}(TA|TB)/);
+    if (!m) return '';
+    return m[1] === 'TA' ? '용역계약' : '납품요구';
+}
+
+// 용역계약만 목록·카드에 작은 표시 (납품요구가 관급 기본형이라 표시하지 않음)
+function serviceContractTag(번호) {
+    return contractTypeOf(번호) === '용역계약'
+        ? ' <span style="background:#ede9fe; color:#5b21b6; padding:0.05rem 0.45rem; border-radius:9999px; font-size:0.65rem; font-weight:600; white-space:nowrap;">용역</span>'
+        : '';
 }
 
 // 관급/사급/비매출 타원 텍스트 생성
@@ -1708,6 +1723,11 @@ function parseG2BXml(xmlText) {
     }
     const root = doc.documentElement;
 
+    // 용역계약체결통보서는 태그 구성이 달라 별도 파서로
+    if (getFirstNS(root, 'Message.Name').includes('용역계약')) {
+        return parseServiceContractXml(root);
+    }
+
     // 거래 헤더
     const reqNo = getFirstNS(root, 'Delivery.RequestNumber.Text');
     const reqDate = parseG2BDate(getFirstNS(root, 'Delivery.Request.Date'));
@@ -1827,18 +1847,131 @@ function applyXmlToForm(parsed) {
     recalcTotals();
 }
 
+// ===== 용역계약체결통보서 XML =====
+// 품목 내역이 없다(계약금액만). 품목 줄은 연결 견적에서 가져오고, 견적이 없으면 1식 한 줄.
+const SERVICE_CONTRACT_CATEGORY = '설치용역';
+
+function parseServiceContractXml(root) {
+    const sender = findChild(root, 'Sender.Details');
+    const emp = findChild(sender, 'Employee.Details');
+    const addr = findChild(sender, 'Address.Details');
+    const serviceName = getFirstNS(root, 'Service.Name');
+    return {
+        문서종류: '용역계약',
+        주문일자: parseG2BDate(getFirstNS(root, 'Contract.Date')),
+        납품요구번호: getFirstNS(root, 'Contract.Number.Text'),
+        사업명: serviceName,
+        거래처: getTextByPath(sender, 'Organization.Details', 'Organization.Name', 'Text.Content'),
+        // Organization.Identifier는 기관코드(사업자번호 아님) → 비움
+        거래처사업자번호: '',
+        거래처주소: [getTextByPath(addr, 'Address.Line1.Text', 'Text.Content'),
+                   getTextByPath(addr, 'Address.Line2.Text', 'Text.Content')].filter(Boolean).join(' '),
+        대금수령: '',
+        수요부서: getTextByPath(emp, 'Department.Name', 'Text.Content'),
+        수요부서담당자: getTextByPath(emp, 'Employee.Name', 'Text.Content'),
+        수요부서직함: '',
+        수요부서연락처: getTextByPath(emp, 'Telephone.Number.Text', 'Text.Content'),
+        납품기한: parseG2BDate(getFirstNS(root, 'Construction.Complete.Date')),
+        계약금액: Math.round(parseFloat(getTextByPath(findChild(root, 'Contract.Amount.Details'), 'Contract.Amount', 'Amount.Content')) || 0),
+        lines: []
+    };
+}
+
+// 계약금액(부가세 포함)과 합계가 같은 미전환 견적 — 정확히 1건일 때만 연결
+function findQuoteForServiceContract(amount) {
+    if (!amount) return null;
+    const hits = (joinedQuotes || []).filter(q =>
+        !q.관련주문번호 && q.상태 !== '주문전환' && Math.round(q.total) === amount);
+    return hits.length === 1 ? hits[0] : null;
+}
+
+function applyServiceContractToForm(parsed) {
+    const quote = findQuoteForServiceContract(parsed.계약금액);
+    const orgName = quote?.org?.이름 || parsed.거래처;  // 견적에 등록된 거래처 이름을 써야 거래처가 중복 생성되지 않음
+    const vat = quote ? (quote.부가세포함 === 'TRUE' ? '포함' : '별도') : '포함';
+
+    document.getElementById('formOrderDate').value = parsed.주문일자 || '';
+    document.getElementById('formDueDate').value = parsed.납품기한 || '';
+    document.getElementById('formNature').value = '관급';
+    document.querySelectorAll('input[name="vat"]').forEach(r => r.checked = (r.value === vat));
+    document.getElementById('formProcureNo').value = parsed.납품요구번호 || '';
+    const orgEl = document.getElementById('formOrgName');
+    orgEl.value = orgName || '';
+    orgEl.dataset.bizNo = '';
+    orgEl.dataset.address = parsed.거래처주소 || '';
+    document.getElementById('formProjectName').value = parsed.사업명 || '';
+    document.getElementById('formPaymentType').value = '';
+    document.getElementById('formQuoteRef').value = quote?.견적번호 || '';
+
+    // 수요담당자: 거래처에 같은 이름의 연락처가 있으면 그걸 선택(중복 생성 방지), 없으면 XML 계약담당자를 새로 입력
+    fillExistingContactDropdown(orgName || '');
+    document.getElementById('formDemandHandler').value = parsed.수요부서담당자 || '';
+    document.getElementById('formDemandTitle').value = '';
+    document.getElementById('formDemandDept').value = parsed.수요부서 || '';
+    document.getElementById('formDemandPhone').value = parsed.수요부서연락처 || '';
+    document.getElementById('formDemandEmail').value = '';
+    const org = (state?.orgs || []).find(o => o.이름 === orgName);
+    const sameContact = org && (state?.contacts || []).find(c =>
+        c.소속거래처ID === org.거래처ID && c.이름 === parsed.수요부서담당자);
+    if (sameContact) {
+        document.getElementById('formExistingContact').value = sameContact.연락처ID;
+        onExistingContactChange();
+    }
+
+    document.getElementById('formDealNumber').value = generateDealNumber('관급', parsed.주문일자);
+
+    document.getElementById('lineTableBody').innerHTML = '';
+    lineCounter = 0;
+    if (quote) {
+        quote.lines.forEach(l => addLineRow({
+            품목: SERVICE_CONTRACT_CATEGORY, 품명: l.품명, 물품식별번호: l.물품식별번호,
+            규격: l.규격, 단위: l.단위, 수량: l.수량, 단가: l.단가
+        }));
+    } else {
+        addLineRow({
+            품목: SERVICE_CONTRACT_CATEGORY,
+            품명: (parsed.사업명 || '').replace(/\s*계약$/, ''),
+            규격: '', 단위: '식', 수량: 1, 단가: parsed.계약금액
+        });
+    }
+    recalcTotals();
+
+    const grand = [...document.querySelectorAll('#lineTableBody tr')].reduce((s, tr) => {
+        const q = parseFloat(tr.querySelector('.line-qty').value) || 0;
+        const p = parseFloat(tr.querySelector('.line-price').value) || 0;
+        return s + computeLineAmounts(q, p, vat).amount;
+    }, 0);
+    return { quote, grand };
+}
+
 async function handleXmlFile(file) {
     const status = document.getElementById('xmlParseStatus');
     try {
         const text = await file.text();
         const parsed = parseG2BXml(text);
+        if (parsed.문서종류 === '용역계약') {
+            const { quote, grand } = applyServiceContractToForm(parsed);
+            const amt = CommonUtils.formatCurrency(parsed.계약금액);
+            const head = `용역계약 XML 읽음: ${parsed.납품요구번호} · ${parsed.거래처} · 계약금액 ${amt}`;
+            if (quote && grand === parsed.계약금액) {
+                status.className = 'success';
+                status.textContent = `${head} · 견적 ${quote.견적번호} 품목 ${quote.lines.length}줄 연결 (합계 일치)`;
+            } else if (quote) {
+                status.className = 'warning';
+                status.textContent = `${head} · 견적 ${quote.견적번호} 연결했으나 합계 ${CommonUtils.formatCurrency(grand)}가 계약금액과 다릅니다. 품목을 확인하세요`;
+            } else {
+                status.className = 'warning';
+                status.textContent = `${head} · 금액이 같은 견적이 없어 1식 한 줄로 넣었습니다. 견적이 있으면 관련견적과 품목을 직접 고쳐 주세요`;
+            }
+            return;
+        }
         applyXmlToForm(parsed);
         status.className = 'success';
-        status.textContent = `✓ XML 파싱 완료: ${parsed.납품요구번호} · ${parsed.거래처} · 라인 ${parsed.lines.length}건`;
+        status.textContent = `XML 파싱 완료: ${parsed.납품요구번호} · ${parsed.거래처} · 라인 ${parsed.lines.length}건`;
     } catch (err) {
         console.error('[XML 파싱 실패]', err);
         status.className = 'error';
-        status.textContent = `✗ XML 파싱 실패: ${err.message}`;
+        status.textContent = `XML 파싱 실패: ${err.message}`;
     }
 }
 

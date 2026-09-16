@@ -100,6 +100,7 @@
         #xmlParseStatus { margin-top: 0.5rem; padding: 0.5rem 0.75rem; border-radius: 0.375rem; font-size: 0.8125rem; display: none; }
         #xmlParseStatus.success { background: #d1fae5; color: #065f46; display: block; }
         #xmlParseStatus.error { background: #fecaca; color: #991b1b; display: block; }
+        #xmlParseStatus.warning { background: #fef3c7; color: #92400e; display: block; }
 
         /* 라인 표 */
         .line-table { width: 100%; border-collapse: collapse; font-size: 0.75rem; }
@@ -134,7 +135,7 @@
         }
     </style>
     <script src="../assets/js/common.js?v=20260904a"></script>
-    <script src="../assets/js/order-management.js?v=20260904a" defer></script>
+    <script src="../assets/js/order-management.js?v=20260916a" defer></script>
 </head>
 <body class="bg-gray-50 text-gray-800">
     <nav class="bg-white shadow-sm border-b">
@@ -455,10 +456,9 @@
             <div class="form-section">
                 <h2 id="formTitle">주문 입력</h2>
 
-                <!-- XML 드래그앤드롭 영역 (관급용) -->
+                <!-- XML 드래그앤드롭 영역 (관급용) — 분할납품요구서 / 용역계약체결통보서 자동 구분 -->
                 <div id="xmlDropZone">
-                    <div class="icon">📂</div>
-                    <div class="main-text">나라장터 분할납품요구서 XML을 여기 끌어다 놓으세요</div>
+                    <div class="main-text">나라장터 분할납품요구서·용역계약체결통보서 XML을 여기 끌어다 놓으세요</div>
                     <div class="sub-text">또는 클릭해서 파일 선택 · 사급 거래는 아래 칸에 직접 입력</div>
                     <input type="file" id="xmlFileInput" accept=".xml" style="display: none;">
                 </div>
@@ -497,8 +497,8 @@
                             <input id="formDealNumber" placeholder="B-26-..." style="font-family: monospace;">
                         </div>
                         <div>
-                            <label>납품요구번호 (관급)</label>
-                            <input id="formProcureNo" placeholder="R26TB...">
+                            <label>납품요구·계약번호 (관급)</label>
+                            <input id="formProcureNo" placeholder="R26TB... (납품요구) / R26TA... (용역계약)">
                         </div>
                         <div class="span-2">
                             <label>거래처</label>
