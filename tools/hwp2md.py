@@ -101,11 +101,46 @@ def blocks_of(path):
     return out
 
 
+def disp_w(s):
+    """한글은 2칸으로 친다."""
+    return sum(2 if ord(c) > 0x2E7F else 1 for c in s)
+
+
+def sparse_as_diagram(rows):
+    """빈 칸이 많은 표(조직도·흐름도)는 글자를 제자리에 놓은 그림으로."""
+    w = max(len(r) for r in rows)
+    rows = [r + [""] * (w - len(r)) for r in rows]
+    colw = [max([disp_w(r[i].replace("<br>", " ")) for r in rows] + [2]) + 2 for i in range(w)]
+    lines = []
+    for r in rows:
+        if not any(c.strip() for c in r):
+            lines.append("")
+            continue
+        line = ""
+        pos = 0
+        for i, c in enumerate(r):
+            target = sum(colw[:i])
+            line += " " * max(target - disp_w(line), 0)
+            line += c.replace("<br>", " / ").strip()
+        lines.append(line.rstrip())
+    # 연속 빈 줄 하나로
+    out = []
+    for l in lines:
+        if l == "" and out and out[-1] == "":
+            continue
+        out.append(l)
+    return "```\n" + "\n".join(out).strip("\n") + "\n```"
+
+
 def md_table(rows):
     if not rows:
         return ""
     w = max(len(r) for r in rows)
     rows = [r + [""] * (w - len(r)) for r in rows]
+    cells = [c for r in rows for c in r]
+    empty = sum(1 for c in cells if not c.strip())
+    if len(rows) >= 3 and w >= 4 and empty / max(len(cells), 1) > 0.55:
+        return sparse_as_diagram(rows)
     # 완전히 빈 열 제거
     keep = [i for i in range(w) if any(r[i].strip() for r in rows)]
     rows = [[r[i] for i in keep] for r in rows]
@@ -402,10 +437,18 @@ def main():
         fid = code
         if any(d["id"] == fid for d in new):
             fid = code + "-2"
+        rev1 = os.path.join(OUT, "rev1", code + ".md")
+        if os.path.exists(rev1):
+            md = open(rev1, encoding="utf-8").read()
+            meta["rev"] = "1"
+            meta["revised"] = "2026-10-05"
+            tm = re.search(r"^title:\s*(.+)$", md, re.M)
+            if tm:
+                title = tm.group(1).strip()
         with open(os.path.join(OUT, fid + ".md"), "w", encoding="utf-8", newline="\n") as fh:
             fh.write(md)
         layer = "매뉴얼" if code.startswith("QM") else "절차서" if code.startswith("QP") else "지침서" if code.startswith("QI") else "양식"
-        status = MERGE_NOTE.get(code, "제정본 Rev." + meta.get("rev", "0"))
+        status = "Rev.1 초안 (다시 씀)" if os.path.exists(os.path.join(OUT, "rev1", code + ".md")) else MERGE_NOTE.get(code, "제정본 Rev." + meta.get("rev", "0"))
         new.append({"id": fid, "number": meta["number"], "title": title, "layer": layer, "chapter": chapter_of(code),
                     "rev": meta.get("rev", "0"), "established": meta.get("established", "2023-07-03"),
                     "revised": meta.get("revised", ""), "status": status, "source": "hwp", "file": "docs/ms/%s.md" % fid})

@@ -652,13 +652,13 @@
   {
    "id": "QP-F103",
    "number": "DB-QP-F103",
-   "title": "검사 및 시험업무",
+   "title": "검사 및 시험",
    "layer": "절차서",
    "chapter": 7,
-   "rev": "0",
+   "rev": "1",
    "established": "2023-07-03",
-   "revised": "",
-   "status": "제정본 Rev.0",
+   "revised": "2026-10-05",
+   "status": "Rev.1 초안 (다시 씀)",
    "source": "hwp",
    "file": "docs/ms/QP-F103.md"
   },
