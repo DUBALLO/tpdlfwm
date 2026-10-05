@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>경영시스템 - 두발로 대시보드</title>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#10b981">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+    <link href="../assets/css/common.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap');
+        body { font-family: 'Noto Sans KR', sans-serif; }
+        mark { background: #fde68a; padding: 0 1px; }
+        .doc h1 { font-size: 1.5rem; font-weight: 700; margin: 1.2rem 0 .8rem; }
+        .doc h2 { font-size: 1.2rem; font-weight: 700; margin: 1.4rem 0 .6rem; border-bottom: 1px solid #e5e7eb; padding-bottom: .2rem; }
+        .doc h3 { font-size: 1.05rem; font-weight: 600; margin: 1rem 0 .4rem; }
+        .doc h4 { font-size: 1rem; font-weight: 600; margin: .8rem 0 .3rem; color: #374151; }
+        .doc p { margin: .35rem 0; line-height: 1.7; }
+        .doc ul, .doc ol { margin: .4rem 0 .4rem 1.4rem; line-height: 1.7; }
+        .doc ul { list-style: disc; } .doc ol { list-style: decimal; }
+        .doc table { border-collapse: collapse; margin: .6rem 0; font-size: .9rem; width: 100%; }
+        .doc th, .doc td { border: 1px solid #d1d5db; padding: .3rem .5rem; vertical-align: top; }
+        .doc th { background: #f3f4f6; }
+        .doc hr { margin: 1rem 0; }
+        .doc code { background: #f3f4f6; padding: 0 .25rem; }
+        @media print {
+            nav, footer, #searchPanel, #registryPanel, #docToolbar, .no-print { display: none !important; }
+            body { background: #fff; }
+            main { max-width: none; padding: 0; }
+            #docPanel { display: block !important; box-shadow: none; border: 0; }
+            .print-header { display: flex !important; }
+            @page { size: A4; margin: 18mm 16mm; }
+        }
+        .print-header { display: none; justify-content: space-between; border-bottom: 2px solid #111; padding-bottom: 4px; margin-bottom: 12px; font-size: 12px; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+
+    <nav class="bg-white shadow-sm border-b">
+        <div class="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
+            <div>
+                <a href="../index.html" class="text-sm text-gray-500 hover:underline">두발로 대시보드</a>
+                <span class="text-gray-300 mx-2">/</span>
+                <a href="#" id="homeLink" class="text-lg font-semibold text-gray-900">경영시스템</a>
+            </div>
+            <div class="text-xs text-gray-500" id="regMeta"></div>
+        </div>
+    </nav>
+
+    <main class="max-w-6xl mx-auto px-4 py-6">
+
+        <section id="searchPanel" class="bg-white rounded-lg shadow-sm border p-4 mb-6">
+            <div class="flex gap-2">
+                <input id="searchInput" type="search" placeholder="검색어 입력. 예: 풀러, 인수검사, 보존년한" autocomplete="off"
+                       class="flex-1 border rounded px-3 py-2 text-base focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                <button id="searchClear" class="px-3 py-2 border rounded text-sm text-gray-600 hover:bg-gray-50">지우기</button>
+            </div>
+            <div id="searchStatus" class="text-xs text-gray-500 mt-2"></div>
+            <div id="searchResults" class="mt-3 divide-y"></div>
+        </section>
+
+        <section id="registryPanel" class="bg-white rounded-lg shadow-sm border p-4">
+            <div class="flex items-baseline justify-between mb-3">
+                <h2 class="text-lg font-semibold">문서대장</h2>
+                <div class="text-xs text-gray-500">
+                    <label class="mr-3"><input type="checkbox" class="layerFilter mr-1" value="매뉴얼" checked>매뉴얼</label>
+                    <label class="mr-3"><input type="checkbox" class="layerFilter mr-1" value="절차서" checked>절차서</label>
+                    <label class="mr-3"><input type="checkbox" class="layerFilter mr-1" value="지침서" checked>지침서(hwp)</label>
+                    <label class="mr-3"><input type="checkbox" class="layerFilter mr-1" value="지침(노션)" checked>지침(노션)</label>
+                    <label><input type="checkbox" class="layerFilter mr-1" value="양식">양식</label>
+                </div>
+            </div>
+            <div id="registryTable"></div>
+        </section>
+
+        <section id="docPanel" class="bg-white rounded-lg shadow-sm border p-6 hidden">
+            <div class="print-header">
+                <span id="phNumber"></span><span id="phTitle"></span><span id="phRev"></span>
+            </div>
+            <div id="docToolbar" class="flex items-center justify-between mb-4 text-sm">
+                <button id="backBtn" class="text-emerald-700 hover:underline">문서대장으로</button>
+                <div class="flex gap-3 items-center">
+                    <span id="docMeta" class="text-xs text-gray-500"></span>
+                    <button id="printBtn" class="px-3 py-1 border rounded text-gray-700 hover:bg-gray-50">인쇄 / PDF</button>
+                </div>
+            </div>
+            <article id="docBody" class="doc"></article>
+        </section>
+
+    </main>
+
+    <footer class="bg-white border-t mt-12">
+        <div class="max-w-6xl mx-auto px-4 py-6">
+            <p class="text-center text-gray-500 text-sm">두발로(주) 경영시스템 문서. 원본은 이 페이지, 인쇄본은 사본.</p>
+        </div>
+    </footer>
+
+    <script src="../assets/js/common.js"></script>
+    <script src="../assets/js/management-system.js?v=20261005b"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/service-worker.js').catch(() => {});
+            });
+        }
+    </script>
+</body>
+</html>
