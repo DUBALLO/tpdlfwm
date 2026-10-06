@@ -1,5 +1,5 @@
 {
- "updated": "2026-10-05",
+ "updated": "2026-10-06",
  "chapters": [
   "0 총칙",
   "1 회사",
@@ -174,10 +174,10 @@
    "title": "제조설비관리",
    "layer": "절차서",
    "chapter": 3,
-   "rev": "0",
+   "rev": "1",
    "established": "2023-07-03",
-   "revised": "",
-   "status": "제정본 Rev.0",
+   "revised": "2026-10-06",
+   "status": "Rev.1 초안 (다시 씀)",
    "source": "hwp",
    "file": "docs/ms/QP-D301.md"
   },
@@ -434,10 +434,10 @@
    "title": "고객불만 및 피해보상처리",
    "layer": "절차서",
    "chapter": 5,
-   "rev": "0",
+   "rev": "1",
    "established": "2023-07-02",
-   "revised": "",
-   "status": "제정본 Rev.0",
+   "revised": "2026-10-06",
+   "status": "Rev.1 초안 (다시 씀)",
    "source": "hwp",
    "file": "docs/ms/QP-E102.md"
   },
@@ -657,7 +657,7 @@
    "chapter": 7,
    "rev": "1",
    "established": "2023-07-03",
-   "revised": "2026-10-05",
+   "revised": "2026-10-06",
    "status": "Rev.1 초안 (다시 씀)",
    "source": "hwp",
    "file": "docs/ms/QP-F103.md"

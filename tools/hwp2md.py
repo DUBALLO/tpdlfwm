@@ -12,7 +12,7 @@ hwp(5.0) 품질문서 → 경영시스템 마크다운 변환기
 - 본문이 끝난 뒤의 표(양식지)는 '붙임 양식' 접힘 블록으로.
 - 교차참조 구번호 → 신번호(파일명 기준) 치환. 치환 목록은 front matter에 남긴다.
 """
-import io, os, re, sys, glob, json
+import io, os, re, sys, glob, json, datetime
 import xml.etree.ElementTree as ET
 from hwp5.xmlmodel import Hwp5File
 
@@ -441,7 +441,8 @@ def main():
         if os.path.exists(rev1):
             md = open(rev1, encoding="utf-8").read()
             meta["rev"] = "1"
-            meta["revised"] = "2026-10-05"
+            rm = re.search(r"^revised:\s*(\S+)", md, re.M)
+            meta["revised"] = rm.group(1) if rm else ""
             tm = re.search(r"^title:\s*(.+)$", md, re.M)
             if tm:
                 title = tm.group(1).strip()
@@ -457,7 +458,7 @@ def main():
     order = {"매뉴얼": 0, "절차서": 1, "지침서": 2, "지침(노션)": 3, "양식": 4}
     docs.sort(key=lambda r: (r["chapter"], order.get(r["layer"], 9), r["number"]))
     reg["docs"] = docs
-    reg["updated"] = "2026-10-05"
+    reg["updated"] = datetime.date.today().isoformat()
     json.dump(reg, open(reg_path, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     print("registry", len(docs))
 
