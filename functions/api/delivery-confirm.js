@@ -9782,6 +9782,12 @@ function escapeXml(s) {
 function escapeRegex(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
+function dropTokenParagraphLinesegs(xml) {
+  return xml.replace(/<hp:p\b[^>]*>(?:(?!<hp:p\b)[\s\S])*?<\/hp:p>/g, (p) => {
+    if (!p.includes("{{")) return p;
+    return p.replace(/<hp:linesegarray>[\s\S]*?<\/hp:linesegarray>/, "");
+  });
+}
 function extractRowCount(tokens, prefix) {
   const re = new RegExp(`^${escapeRegex(prefix)}(\\d+)\\.`);
   let max = -1;
@@ -9881,6 +9887,7 @@ var onRequestPost = async ({ request, env }) => {
         xml = expandTableInSection(xml, cfg.tableIdx, cfg.tokenPrefix, neededRows);
       }
     }
+    xml = dropTokenParagraphLinesegs(xml);
     for (const [token, value] of tokenEntries) {
       const escVal = escapeXml(value ?? "");
       xml = xml.split(token).join(escVal);
