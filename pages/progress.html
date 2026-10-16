@@ -28,7 +28,7 @@
 
     <main class="max-w-6xl mx-auto px-4 py-6">
         <section id="mineSection" class="mb-8 hidden">
-            <h2 class="text-base font-bold text-gray-900 mb-3">형우가 할 것</h2>
+            <h2 class="text-base font-bold text-gray-900 mb-3">To Do</h2>
             <ul id="mineList" class="bg-white rounded-lg shadow-sm border-l-4 border-amber-400 divide-y"></ul>
         </section>
         <div id="groups"></div>
@@ -66,9 +66,10 @@
                     <span class="text-xs px-2 py-0.5 rounded shrink-0 ${st.badge}">${esc(label)}</span>
                 </div>
                 <p class="text-sm text-gray-700 leading-relaxed mb-3">${esc(p.state)}</p>
-                ${recent ? `<div class="mb-3"><div class="text-xs text-gray-500 mb-1">최근</div><ul class="text-sm space-y-1">${recent}</ul></div>` : ''}
-                ${next ? `<div class="mb-3"><div class="text-xs text-gray-500 mb-1">다음</div><ul class="text-sm list-disc ml-5 space-y-1">${next}</ul></div>` : ''}
-                ${mine ? `<div class="bg-amber-50 rounded px-3 py-2"><div class="text-xs text-amber-700 mb-1">형우가 할 것</div><ul class="text-sm list-disc ml-5 space-y-1">${mine}</ul></div>` : ''}
+                ${recent ? `<div class="mb-3"><div class="text-xs text-gray-500 mb-1">이력</div><ul class="text-sm space-y-1">${recent}</ul></div>` : ''}
+                ${next ? `<div class="mb-3"><div class="text-xs text-gray-500 mb-1">테스크</div><ul class="text-sm list-disc ml-5 space-y-1">${next}</ul></div>` : ''}
+                ${mine ? `<div class="bg-amber-50 rounded px-3 py-2"><div class="text-xs text-amber-700 mb-1">To Do</div><ul class="text-sm list-disc ml-5 space-y-1">${mine}</ul></div>` : ''}
+                ${p.link ? `<a href="${esc(p.link.href)}" class="inline-block mt-3 text-sm text-emerald-700 font-medium hover:underline">${esc(p.link.label)}</a>` : ''}
             </div>`;
         }
 

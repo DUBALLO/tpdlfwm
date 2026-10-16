@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>연구소 - 두발로 대시보드</title>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#10b981">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="../assets/css/common.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap');
+        body { font-family: 'Noto Sans KR', sans-serif; }
+        details > summary { cursor: pointer; list-style: none; }
+        details > summary::-webkit-details-marker { display: none; }
+        details > summary::before { content: '▸'; display: inline-block; width: 1em; color: #9ca3af; }
+        details[open] > summary::before { content: '▾'; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+
+    <nav class="bg-white shadow-sm border-b">
+        <div class="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
+            <div class="text-sm">
+                <a href="../index.html" class="text-gray-500 hover:underline">두발로 대시보드</a>
+                <span class="text-gray-300 mx-2">/</span>
+                <a href="./progress.html" class="text-gray-500 hover:underline">진척</a>
+                <span class="text-gray-300 mx-2">/</span>
+                <span class="text-lg font-semibold text-gray-900">연구소</span>
+            </div>
+            <div class="text-xs text-gray-500" id="updated"></div>
+        </div>
+    </nav>
+
+    <main class="max-w-6xl mx-auto px-4 py-6" id="root"></main>
+    <p id="error" class="hidden max-w-6xl mx-auto px-4 text-sm text-red-600"></p>
+
+    <footer class="bg-white border-t mt-12">
+        <div class="max-w-6xl mx-auto px-4 py-6">
+            <p class="text-center text-gray-500 text-sm">© 2025 두발로 대시보드. All Rights Reserved.</p>
+        </div>
+    </footer>
+
+    <script>
+    (function () {
+        const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        const shortDate = d => { const [, m, dd] = d.split('-'); return `${+m}.${+dd}`; };
+
+        const toggles = (sections, open) => (sections || []).map(s => `
+            <details class="mt-2" ${open ? 'open' : ''}>
+                <summary class="text-sm font-medium text-gray-700">${esc(s.label)} <span class="text-gray-400 font-normal">${s.items.length}</span></summary>
+                <ol class="text-sm list-decimal ml-9 mt-1 space-y-1 text-gray-700">${s.items.map(i => `<li>${esc(i)}</li>`).join('')}</ol>
+            </details>`).join('');
+
+        const reports = list => (list && list.length) ? `
+            <div class="mt-3 pt-3 border-t text-sm">
+                <div class="text-xs text-gray-500 mb-1">연구보고서</div>
+                ${list.map(r => `<a href="${esc(r.url)}" target="_blank" rel="noopener" class="block text-emerald-700 hover:underline">${esc(r.title)}</a>`).join('')}
+            </div>` : '';
+
+        const badge = st => st === '진행'
+            ? '<span class="text-xs px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 shrink-0">진행</span>'
+            : `<span class="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-500 shrink-0">${esc(st)}</span>`;
+
+        const section = (title, body, extra = '') => `
+            <section class="mb-8">
+                <h2 class="text-base font-bold text-gray-900 mb-3">${esc(title)} ${extra}</h2>
+                ${body}
+            </section>`;
+
+        function render(d) {
+            document.getElementById('updated').textContent = `갱신 ${d.updated}`;
+            const out = [];
+
+            if (d.todo && d.todo.length) {
+                out.push(section('To Do', `<ul class="bg-white rounded-lg shadow-sm border-l-4 border-amber-400 divide-y">${
+                    d.todo.map(t => `<li class="px-4 py-2.5 text-sm">${esc(t)}</li>`).join('')}</ul>`));
+            }
+
+            const active = d.tasks.filter(t => t.sections);
+            const held = d.tasks.filter(t => !t.sections);
+            out.push(section('연구과제', `
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    ${active.map(t => `
+                    <div class="bg-white rounded-lg shadow-sm border-t-4 border-emerald-500 p-5">
+                        <div class="flex items-start justify-between gap-3">
+                            <h3 class="font-bold text-gray-900"><span class="text-gray-400 font-medium mr-1">${t.no}</span>${esc(t.title)}</h3>${badge(t.status)}
+                        </div>
+                        ${toggles(t.sections)}
+                        ${reports(t.reports)}
+                    </div>`).join('')}
+                    <div class="bg-white rounded-lg shadow-sm border-t-4 border-gray-300 p-5">
+                        ${held.map(t => `<div class="flex items-center justify-between gap-3 py-1.5">
+                            <span class="text-gray-700"><span class="text-gray-400 mr-1">${t.no}</span>${esc(t.title)}</span>${badge(t.status)}</div>`).join('')}
+                    </div>
+                </div>`, `<span class="text-gray-400 font-normal text-sm">${d.tasks.length}</span>`));
+
+            out.push(section('비즈니스 아이디어', `
+                <div class="bg-white rounded-lg shadow-sm border-t-4 border-orange-400 p-5 divide-y">
+                    ${d.ideas.map(i => `
+                    <details class="py-2">
+                        <summary class="font-medium text-gray-900"><span class="text-gray-400 mr-1">${i.no}</span>${esc(i.title)}</summary>
+                        <div class="ml-4">${toggles(i.sections, true)}</div>
+                    </details>`).join('')}
+                </div>`, `<span class="text-gray-400 font-normal text-sm">${d.ideas.length}</span>`));
+
+            const c = d.criteria;
+            out.push(section(c.title, `
+                <div class="bg-white rounded-lg shadow-sm border-t-4 border-purple-400 p-5">
+                    ${toggles(c.sections)}
+                    ${reports(c.reports)}
+                </div>`, `<span class="text-xs font-normal text-purple-700 bg-purple-50 px-2 py-0.5 rounded ml-1">${esc(c.note)}</span>`));
+
+            out.push(section('공통', `
+                <div class="bg-white rounded-lg shadow-sm p-5 space-y-2">
+                    ${d.common.map(g => `<div class="text-sm"><span class="text-xs text-gray-500 mr-2">${esc(g.label)}</span>${g.items.map(esc).join(' · ')}</div>`).join('')}
+                </div>`));
+
+            const e = d.expos;
+            out.push(section('박람회', `
+                <div class="bg-white rounded-lg shadow-sm p-5">
+                    <ul class="text-sm text-gray-600 mb-3 space-y-1">${e.how.map(h => `<li>${esc(h)}</li>`).join('')}</ul>
+                    <div class="divide-y border-t">
+                    ${e.list.map(x => `<div class="py-2.5 text-sm flex flex-col sm:flex-row sm:gap-4">
+                        <span class="font-medium text-gray-900 sm:w-72 shrink-0">${esc(x.name)}</span>
+                        <span class="text-gray-500 sm:w-52 shrink-0">${esc([x.when, x.status].filter(Boolean).join(' · '))}</span>
+                        <span class="text-gray-700">${esc(x.link)}</span></div>`).join('')}
+                    </div>
+                </div>`));
+
+            out.push(`<p class="text-sm"><a href="${esc(d.reportsDb)}" target="_blank" rel="noopener" class="text-emerald-700 hover:underline">연구보고서 전체 (노션)</a></p>`);
+            document.getElementById('root').innerHTML = out.join('');
+        }
+
+        fetch('../docs/lab.json', { cache: 'no-store' })
+            .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+            .then(render)
+            .catch(e => {
+                const el = document.getElementById('error');
+                el.textContent = `연구소 데이터를 불러오지 못했습니다 (${e.message}).`;
+                el.classList.remove('hidden');
+            });
+    })();
+    </script>
+</body>
+</html>
