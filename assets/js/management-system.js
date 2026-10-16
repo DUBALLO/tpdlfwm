@@ -117,7 +117,7 @@
 
         let html = `
             <div class="flex items-center justify-between text-sm mb-4">
-                <a href="#" class="text-emerald-700 hover:underline">경영시스템</a>
+                <a href="#" class="text-emerald-700 hover:underline">두발로 규정집</a>
                 <div class="text-gray-400">
                     ${prev ? `<a href="#ch=${prev.no}" class="hover:underline mr-3">${prev.no} ${esc(prev.title)}</a>` : ''}
                     ${next ? `<a href="#ch=${next.no}" class="hover:underline">${next.no} ${esc(next.title)}</a>` : ''}
@@ -154,7 +154,7 @@
         }
         $('chapterBody').innerHTML = html;
         $('crumb').textContent = ` / ${ch.no} ${ch.title}`;
-        document.title = `${ch.no} ${ch.title} - 경영시스템`;
+        document.title = `${ch.no} ${ch.title} - 두발로 규정집`;
         show('chapterPanel');
         window.scrollTo(0, 0);
     }
@@ -222,7 +222,7 @@
         const metaBits = [entry.number, entry.layer, `Rev ${entry.rev}`, entry.revised || entry.established || ''];
         if (doc.meta.approval) metaBits.push(doc.meta.approval);
         $('docMeta').textContent = metaBits.filter(Boolean).join(' · ');
-        document.title = `${entry.title} - 경영시스템`;
+        document.title = `${entry.title} - 두발로 규정집`;
         $('crumb').innerHTML = ch ? ` / <a href="#ch=${ch.no}" class="hover:underline">${ch.no} ${esc(ch.title)}</a> / ${esc(entry.title)}` : ` / ${esc(entry.title)}`;
 
         let html = marked.parse(doc.body, { gfm: true, breaks: false });
@@ -273,7 +273,7 @@
             renderChapter(parseInt(params.get('ch'), 10));
         } else {
             $('crumb').textContent = '';
-            document.title = '경영시스템 - 두발로 대시보드';
+            document.title = '두발로 규정집 - 두발로 대시보드';
             show('homePanel');
             const q = $('searchInput').value.trim();
             if (q) runSearch(q);

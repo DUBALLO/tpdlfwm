@@ -24,7 +24,7 @@
             <div class="text-sm">
                 <a href="../index.html" class="text-gray-500 hover:underline">두발로 대시보드</a>
                 <span class="text-gray-300 mx-2">/</span>
-                <a href="./progress.html" class="text-gray-500 hover:underline">진척</a>
+                <a href="./progress.html" class="text-gray-500 hover:underline">경영시스템</a>
                 <span class="text-gray-300 mx-2">/</span>
                 <span class="text-lg font-semibold text-gray-900">연구소</span>
             </div>
@@ -95,38 +95,40 @@
                     </div>
                 </div>`, `<span class="text-gray-400 font-normal text-sm">${d.tasks.length}</span>`));
 
-            out.push(section('비즈니스 아이디어', `
-                <div class="bg-white rounded-lg shadow-sm border-t-4 border-orange-400 p-5 divide-y">
-                    ${d.ideas.map(i => `
-                    <details class="py-2">
-                        <summary class="font-medium text-gray-900"><span class="text-gray-400 mr-1">${i.no}</span>${esc(i.title)}</summary>
-                        <div class="ml-4">${toggles(i.sections, true)}</div>
-                    </details>`).join('')}
-                </div>`, `<span class="text-gray-400 font-normal text-sm">${d.ideas.length}</span>`));
-
             const c = d.criteria;
-            out.push(section(c.title, `
-                <div class="bg-white rounded-lg shadow-sm border-t-4 border-purple-400 p-5">
-                    ${toggles(c.sections)}
-                    ${reports(c.reports)}
-                </div>`, `<span class="text-xs font-normal text-purple-700 bg-purple-50 px-2 py-0.5 rounded ml-1">${esc(c.note)}</span>`));
-
-            out.push(section('공통', `
-                <div class="bg-white rounded-lg shadow-sm p-5 space-y-2">
-                    ${d.common.map(g => `<div class="text-sm"><span class="text-xs text-gray-500 mr-2">${esc(g.label)}</span>${g.items.map(esc).join(' · ')}</div>`).join('')}
-                </div>`));
-
-            const e = d.expos;
-            out.push(section('박람회', `
-                <div class="bg-white rounded-lg shadow-sm p-5">
-                    <ul class="text-sm text-gray-600 mb-3 space-y-1">${e.how.map(h => `<li>${esc(h)}</li>`).join('')}</ul>
-                    <div class="divide-y border-t">
-                    ${e.list.map(x => `<div class="py-2.5 text-sm flex flex-col sm:flex-row sm:gap-4">
-                        <span class="font-medium text-gray-900 sm:w-72 shrink-0">${esc(x.name)}</span>
-                        <span class="text-gray-500 sm:w-52 shrink-0">${esc([x.when, x.status].filter(Boolean).join(' · '))}</span>
-                        <span class="text-gray-700">${esc(x.link)}</span></div>`).join('')}
+            const nameList = list => list.map(x => x.url
+                ? `<li><a href="${esc(x.url)}" target="_blank" rel="noopener" class="text-gray-800 hover:underline">${esc(x.name)}</a></li>`
+                : `<li class="text-gray-800">${esc(x.name)}</li>`).join('');
+            out.push(`<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8 items-start">
+                <div>
+                    <h2 class="text-base font-bold text-gray-900 mb-3">비즈니스 아이디어 <span class="text-gray-400 font-normal text-sm">${d.ideas.length}</span></h2>
+                    <div class="bg-white rounded-lg shadow-sm border-t-4 border-orange-400 p-5 divide-y">
+                        ${d.ideas.map(i => `
+                        <details class="py-2">
+                            <summary class="font-medium text-gray-900">${i.url ? `<a href="${esc(i.url)}" target="_blank" rel="noopener" class="hover:underline">${esc(i.title)}</a>` : esc(i.title)}</summary>
+                            <div class="ml-4">${toggles(i.sections, true)}</div>
+                        </details>`).join('')}
                     </div>
-                </div>`));
+                </div>
+                <div>
+                    <h2 class="text-base font-bold text-gray-900 mb-3">${esc(c.title)} <span class="text-xs font-normal text-purple-700 bg-purple-50 px-2 py-0.5 rounded ml-1">${esc(c.note)}</span></h2>
+                    <div class="bg-white rounded-lg shadow-sm border-t-4 border-purple-400 p-5">
+                        ${toggles(c.sections)}
+                        ${reports(c.reports)}
+                    </div>
+                </div>
+            </div>`);
+
+            out.push(`<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8 items-start">
+                <div>
+                    <h2 class="text-base font-bold text-gray-900 mb-3">지원사업</h2>
+                    <div class="bg-white rounded-lg shadow-sm border-t-4 border-sky-400 p-5"><ul class="text-sm space-y-1.5">${nameList(d.supports)}</ul></div>
+                </div>
+                <div>
+                    <h2 class="text-base font-bold text-gray-900 mb-3">박람회</h2>
+                    <div class="bg-white rounded-lg shadow-sm border-t-4 border-yellow-400 p-5"><ul class="text-sm space-y-1.5">${nameList(d.expos)}</ul></div>
+                </div>
+            </div>`);
 
             out.push(`<p class="text-sm"><a href="${esc(d.reportsDb)}" target="_blank" rel="noopener" class="text-emerald-700 hover:underline">연구보고서 전체 (노션)</a></p>`);
             document.getElementById('root').innerHTML = out.join('');
