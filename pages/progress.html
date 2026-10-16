@@ -53,14 +53,17 @@
         const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
         const shortDate = d => { const [y, m, dd] = d.split('-'); return `${+m}.${+dd}`; };
 
+        const ext = u => /^https?:/.test(u) ? ' target="_blank" rel="noopener"' : '';
+        const todo = m => typeof m === 'string' ? esc(m) : `<a href="${esc(m.u)}"${ext(m.u)} class="hover:underline">${esc(m.t)}</a>`;
+
         function card(p, label) {
             const st = GROUP_STYLE[p.group] || GROUP_STYLE.kept;
             const recent = (p.recent || []).slice(0, 3).map(r =>
                 `<li class="flex gap-2"><span class="text-gray-400 tabular-nums shrink-0 w-10">${esc(shortDate(r.date))}</span><span>${esc(r.text)}</span></li>`).join('');
             const next = (p.next || []).map(n => `<li>${esc(n)}</li>`).join('');
-            const mine = (p.mine || []).map(n => `<li>${esc(n)}</li>`).join('');
+            const mine = (p.mine || []).map(n => `<li>${todo(n)}</li>`).join('');
             const title = p.link
-                ? `<a href="${esc(p.link)}" class="hover:underline">${esc(p.name)}</a>`
+                ? `<a href="${esc(p.link)}"${ext(p.link)} class="hover:underline">${esc(p.name)}</a>`
                 : esc(p.name);
             const head = `
                 <div class="flex items-start justify-between gap-3 mb-2">
@@ -89,7 +92,7 @@
             const mineItems = data.projects.flatMap(p => (p.mine || []).map(m => ({ p, m })));
             if (mineItems.length) {
                 document.getElementById('mineList').innerHTML = mineItems.map(({ p, m }) =>
-                    `<li class="px-4 py-2.5 text-sm flex flex-col sm:flex-row sm:gap-3"><span class="text-gray-400 shrink-0 sm:w-56">${esc(p.name)}</span><span>${esc(m)}</span></li>`).join('');
+                    `<li class="px-4 py-2.5 text-sm flex flex-col sm:flex-row sm:gap-3"><span class="text-gray-400 shrink-0 sm:w-56">${esc(p.name)}</span><span>${todo(m)}</span></li>`).join('');
                 document.getElementById('mineSection').classList.remove('hidden');
             }
 

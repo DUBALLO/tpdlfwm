@@ -27,9 +27,18 @@
       "recent": [],
       "next": [],
       "mine": [
-        "의정부 구절초 현장 사진 확보 (10월 개화기)",
-        "AMXPO 참관 (10.21~23 킨텍스)",
-        "11월 연구 대화"
+        {
+          "t": "의정부 구절초 현장 사진 확보 (10월 개화기)",
+          "u": "https://app.notion.com/p/3fb75efe5cb28156bd3dff08cbcee43a"
+        },
+        {
+          "t": "AMXPO 참관 (10.21~23 킨텍스)",
+          "u": "https://app.notion.com/p/3fb75efe5cb281e9be4cca2d9485560f"
+        },
+        {
+          "t": "11월 연구 대화",
+          "u": "./lab.html"
+        }
       ],
       "link": "./lab.html",
       "titles": [
@@ -63,7 +72,10 @@
         "위키 글을 규정과 지식으로 가르기"
       ],
       "mine": [
-        "절차서 질문 7개 결정 (청정활동 주기, 리스크 대장 위치, 방침 원본 등)"
+        {
+          "t": "절차서 질문 7개 결정 (청정활동 주기, 리스크 대장 위치, 방침 원본 등)",
+          "u": "./management-system.html"
+        }
       ],
       "link": "./management-system.html"
     },
@@ -82,7 +94,8 @@
         "노션 시공자료 분류를 사진 태그로 옮기기",
         "사진 → 시공사례 블로그 연결"
       ],
-      "mine": []
+      "mine": [],
+      "link": "http://100.80.44.103:2283"
     },
     {
       "code": "004",
@@ -97,8 +110,12 @@
       ],
       "next": [],
       "mine": [
-        "인천공항 태양광 방초매트 — 시행사 회신 확인"
-      ]
+        {
+          "t": "인천공항 태양광 방초매트 — 시행사 회신 확인",
+          "u": "https://app.notion.com/p/39475efe5cb280348812fceae1e9306d"
+        }
+      ],
+      "link": "https://docs.google.com/spreadsheets/d/1fsORbedAOv7ZUWvzcP4Cn8uSJ1uyifBwdrqmYr2ygl4/edit"
     },
     {
       "code": "001",
@@ -118,7 +135,8 @@
       "next": [
         "경영시스템 첫 화면을 할 일 대시보드로 (011과 같이)"
       ],
-      "mine": []
+      "mine": [],
+      "link": "../index.html"
     },
     {
       "code": "007",
@@ -136,8 +154,12 @@
         "블로그 글 4편 (양식 기반으로 다시 쓰기)"
       ],
       "mine": [
-        "점검 때 네이버 서치어드바이저 캡처 4장 확보"
-      ]
+        {
+          "t": "점검 때 네이버 서치어드바이저 캡처 4장 확보",
+          "u": "https://searchadvisor.naver.com/console/board"
+        }
+      ],
+      "link": "https://search.google.com/search-console?resource_id=https%3A%2F%2Fwww.duballo.kr%2F"
     },
     {
       "code": "012",
@@ -152,8 +174,12 @@
       ],
       "next": [],
       "mine": [
-        "방초매트 가격표 단가·단위(롤) 표시 확인 — 확인 전엔 그 QR 인쇄 보류"
-      ]
+        {
+          "t": "방초매트 가격표 단가·단위(롤) 표시 확인 — 확인 전엔 그 QR 인쇄 보류",
+          "u": "https://price.duballo.kr/?p=grassfree"
+        }
+      ],
+      "link": "https://price.duballo.kr"
     },
     {
       "code": "013",
@@ -167,7 +193,8 @@
         }
       ],
       "next": [],
-      "mine": []
+      "mine": [],
+      "link": "https://www.moel.go.kr"
     },
     {
       "code": "014",
@@ -181,7 +208,8 @@
         }
       ],
       "next": [],
-      "mine": []
+      "mine": [],
+      "link": "https://docs.gov.kr"
     },
     {
       "code": "003",
@@ -196,8 +224,12 @@
       ],
       "next": [],
       "mine": [
-        "브랜드 색·글꼴 확정 (확정되면 재개)"
-      ]
+        {
+          "t": "브랜드 색·글꼴 확정 (확정되면 재개)",
+          "u": "https://www.duballo.kr"
+        }
+      ],
+      "link": "https://www.duballo.kr"
     },
     {
       "code": "005",
@@ -212,8 +244,12 @@
       ],
       "next": [],
       "mine": [
-        "DWG 도면용 ODA 변환기 설치 (필요할 때)"
-      ]
+        {
+          "t": "DWG 도면용 ODA 변환기 설치 (필요할 때)",
+          "u": "https://www.opendesign.com/guestfiles/oda_file_converter"
+        }
+      ],
+      "link": "https://www.opendesign.com/guestfiles/oda_file_converter"
     },
     {
       "code": "009",
@@ -227,7 +263,8 @@
         }
       ],
       "next": [],
-      "mine": []
+      "mine": [],
+      "link": "https://app.notion.com/p/3fb75efe5cb2817798cfc910976593d0"
     },
     {
       "code": "010",
@@ -236,7 +273,8 @@
       "state": "퇴근보고·2차업무·촬영 체크리스트 등 양식 6장. 필요할 때 추가.",
       "recent": [],
       "next": [],
-      "mine": []
+      "mine": [],
+      "link": "https://app.notion.com/p/2ae75efe5cb2800ea19cd49318f0cfa5"
     },
     {
       "code": "002",
@@ -245,7 +283,8 @@
       "state": "대출심사(2026-06) 끝. 회사 사실의 원본 창고로만 씀.",
       "recent": [],
       "next": [],
-      "mine": []
+      "mine": [],
+      "link": "https://app.notion.com/p/3a375efe5cb2810bbffffd6f8ab3545e"
     }
   ]
 }

@@ -15,6 +15,8 @@
         details > summary::-webkit-details-marker { display: none; }
         details > summary::before { content: '▸'; display: inline-block; width: 1em; color: #9ca3af; }
         details[open] > summary::before { content: '▾'; }
+        summary:focus { outline: none; }
+        summary:focus-visible { outline: 2px solid #a7f3d0; outline-offset: 2px; border-radius: 4px; }
     </style>
 </head>
 <body class="bg-gray-50 text-gray-800">
@@ -61,12 +63,12 @@
         const item = (title, url, status, body) => body
             ? `<details class="py-2">
                    <summary class="flex items-center gap-3"><span class="flex-1 font-medium text-gray-900">${link(url, title)}</span>${badge(status)}</summary>
-                   <div class="ml-4 mt-1">${body}</div>
+                   <div class="ml-7 mt-1.5 mb-1">${body}</div>
                </details>`
             : `<div class="py-2 flex items-center justify-between gap-3"><span class="flex-1 font-medium text-gray-900 pl-7">${link(url, title)}</span>${badge(status)}</div>`;
 
         const reportList = list => (list && list.length)
-            ? `<ul class="text-sm space-y-1">${list.map(r => `<li>${link(r.url, r.title)}</li>`).join('')}</ul>` : '';
+            ? `<ul class="text-sm text-gray-700 space-y-1.5">${list.map(r => `<li>${link(r.url, r.title)}</li>`).join('')}</ul>` : '';
 
         const sections = (secs, open = true) => (secs || []).map(x => `
             <details class="mt-1" ${open ? 'open' : ''}>
@@ -80,13 +82,13 @@
             const c = d.criteria;
 
             out.push(pair(
-                head('To Do') + `<ul class="bg-white rounded-lg shadow-sm border-l-4 border-amber-400 divide-y">${(d.todo || []).map(t => `<li class="px-4 py-2.5 text-sm">${esc(t)}</li>`).join('')}</ul>`,
-                head(link(c.url, c.title)) + `<div class="bg-white rounded-lg shadow-sm border border-purple-200 p-5">${sections(c.sections, false)}</div>`
+                head('To Do') + `<ul class="bg-white rounded-lg shadow-sm border-l-4 border-amber-400 divide-y">${(d.todo || []).map(t => `<li class="px-4 py-2.5 text-sm">${typeof t === 'string' ? esc(t) : link(t.u, t.t)}</li>`).join('')}</ul>`,
+                head(link(c.url, c.title)) + kanban('border-purple-400', `<div class="divide-y">${c.sections.map(x => item(x.label, null, String(x.items.length), `<ol class="text-sm text-gray-700 list-decimal ml-4 space-y-1.5">${x.items.map(i => `<li>${esc(i)}</li>`).join('')}</ol>`)).join('')}</div>`)
             ));
 
             out.push(pair(
                 head('연구과제', d.tasks.length) + kanban('border-emerald-500', `<div class="divide-y">${d.tasks.map(t => item(t.title, t.url, t.status, reportList(t.reports))).join('')}</div>`),
-                head('비즈니스 아이디어', d.ideas.length) + kanban('border-orange-400', `<div class="divide-y">${d.ideas.map(i => item(i.title, i.url, i.status, sections(i.sections))).join('')}</div>`)
+                head('비즈니스 아이디어', d.ideas.length) + kanban('border-orange-400', `<div class="divide-y">${d.ideas.map(i => item(i.title, i.url, i.status, reportList(i.reports))).join('')}</div>`)
             ));
 
             // 지원사업: 선정 건은 맨 위, 나머지는 최신순, 합쳐 10건
