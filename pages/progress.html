@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>진척 - 두발로 대시보드</title>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#10b981">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="../assets/css/common.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap');
+        body { font-family: 'Noto Sans KR', sans-serif; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+
+    <nav class="bg-white shadow-sm border-b">
+        <div class="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
+            <div class="text-sm">
+                <a href="../index.html" class="text-gray-500 hover:underline">두발로 대시보드</a>
+                <span class="text-gray-300 mx-2">/</span>
+                <span class="text-lg font-semibold text-gray-900">진척</span>
+            </div>
+            <div class="text-xs text-gray-500" id="updated"></div>
+        </div>
+    </nav>
+
+    <main class="max-w-6xl mx-auto px-4 py-6">
+        <section id="mineSection" class="mb-8 hidden">
+            <h2 class="text-base font-bold text-gray-900 mb-3">형우가 할 것</h2>
+            <ul id="mineList" class="bg-white rounded-lg shadow-sm border-l-4 border-amber-400 divide-y"></ul>
+        </section>
+        <div id="groups"></div>
+        <p id="error" class="hidden text-sm text-red-600"></p>
+    </main>
+
+    <footer class="bg-white border-t mt-12">
+        <div class="max-w-6xl mx-auto px-4 py-6">
+            <p class="text-center text-gray-500 text-sm">© 2025 두발로 대시보드. All Rights Reserved.</p>
+        </div>
+    </footer>
+
+    <script>
+    (function () {
+        const GROUP_STYLE = {
+            active:  { border: 'border-emerald-500', badge: 'bg-emerald-50 text-emerald-700' },
+            routine: { border: 'border-sky-500',     badge: 'bg-sky-50 text-sky-700' },
+            paused:  { border: 'border-gray-400',    badge: 'bg-gray-100 text-gray-600' },
+            kept:    { border: 'border-gray-200',    badge: 'bg-gray-50 text-gray-500' }
+        };
+
+        const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        const shortDate = d => { const [y, m, dd] = d.split('-'); return `${+m}.${+dd}`; };
+
+        function card(p, label) {
+            const st = GROUP_STYLE[p.group] || GROUP_STYLE.kept;
+            const recent = (p.recent || []).slice(0, 3).map(r =>
+                `<li class="flex gap-2"><span class="text-gray-400 tabular-nums shrink-0 w-10">${esc(shortDate(r.date))}</span><span>${esc(r.text)}</span></li>`).join('');
+            const next = (p.next || []).map(n => `<li>${esc(n)}</li>`).join('');
+            const mine = (p.mine || []).map(n => `<li>${esc(n)}</li>`).join('');
+            return `
+            <div class="bg-white rounded-lg shadow-sm border-t-4 ${st.border} p-5">
+                <div class="flex items-start justify-between gap-3 mb-2">
+                    <h3 class="font-bold text-gray-900"><span class="text-gray-400 font-medium mr-1">${esc(p.code)}</span>${esc(p.name)}</h3>
+                    <span class="text-xs px-2 py-0.5 rounded shrink-0 ${st.badge}">${esc(label)}</span>
+                </div>
+                <p class="text-sm text-gray-700 leading-relaxed mb-3">${esc(p.state)}</p>
+                ${recent ? `<div class="mb-3"><div class="text-xs text-gray-500 mb-1">최근</div><ul class="text-sm space-y-1">${recent}</ul></div>` : ''}
+                ${next ? `<div class="mb-3"><div class="text-xs text-gray-500 mb-1">다음</div><ul class="text-sm list-disc ml-5 space-y-1">${next}</ul></div>` : ''}
+                ${mine ? `<div class="bg-amber-50 rounded px-3 py-2"><div class="text-xs text-amber-700 mb-1">형우가 할 것</div><ul class="text-sm list-disc ml-5 space-y-1">${mine}</ul></div>` : ''}
+            </div>`;
+        }
+
+        function render(data) {
+            document.getElementById('updated').textContent = `갱신 ${data.updated}`;
+            const labels = Object.fromEntries(data.groups.map(g => [g.key, g.label]));
+
+            const mineItems = data.projects.flatMap(p => (p.mine || []).map(m => ({ p, m })));
+            if (mineItems.length) {
+                document.getElementById('mineList').innerHTML = mineItems.map(({ p, m }) =>
+                    `<li class="px-4 py-2.5 text-sm flex flex-col sm:flex-row sm:gap-3"><span class="text-gray-400 shrink-0 sm:w-56">${esc(p.code)} ${esc(p.name)}</span><span>${esc(m)}</span></li>`).join('');
+                document.getElementById('mineSection').classList.remove('hidden');
+            }
+
+            document.getElementById('groups').innerHTML = data.groups.map(g => {
+                const items = data.projects.filter(p => p.group === g.key);
+                if (!items.length) return '';
+                return `<section class="mb-8">
+                    <h2 class="text-base font-bold text-gray-900 mb-3">${esc(g.label)} <span class="text-gray-400 font-normal text-sm">${items.length}</span></h2>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">${items.map(p => card(p, labels[p.group])).join('')}</div>
+                </section>`;
+            }).join('');
+        }
+
+        fetch('../docs/progress.json', { cache: 'no-store' })
+            .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+            .then(render)
+            .catch(e => {
+                const el = document.getElementById('error');
+                el.textContent = `진척 데이터를 불러오지 못했습니다 (${e.message}).`;
+                el.classList.remove('hidden');
+            });
+    })();
+    </script>
+</body>
+</html>
