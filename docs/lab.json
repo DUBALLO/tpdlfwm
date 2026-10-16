@@ -11,28 +11,6 @@
       "no": 1,
       "title": "자생초화 식생매트 (종자코팅)",
       "status": "진행",
-      "sections": [
-        {
-          "label": "병목",
-          "items": [
-            "산림종자 공급이 불안정함",
-            "식생지 설비가 없음. 외주는 최소 6,000㎡",
-            "코팅 종자(SAP) 보관 시 습기 관리",
-            "자생 초화는 활착이 느려 원지반 풀과의 경합에 약함",
-            "N매트+손파종 시 종자 유실 (앵커링)"
-          ]
-        },
-        {
-          "label": "테스크",
-          "items": [
-            "홈페이지·카탈로그에 G110N(쌍떡잎 초화용)과 G306N(잔디용) 차이 강조",
-            "SAP 등 종자코팅 설계, 필요 장비 리스트업",
-            "원지반 흙에서 4구 비교 실험 (구절초 단독/혼파 × 코팅 유/무)",
-            "관련 지원사업 찾기",
-            "지식재산권 출원 가능성 검토 (실험 전)"
-          ]
-        }
-      ],
       "reports": [
         {
           "date": "2026-10-16",
@@ -167,16 +145,33 @@
   "expos": [
     {
       "name": "AMXPO 아시아 기계&제조산업전",
-      "url": "https://app.notion.com/p/3fb75efe5cb281e9be4cca2d9485560f"
+      "url": "https://app.notion.com/p/3fb75efe5cb281e9be4cca2d9485560f",
+      "status": "예정"
     },
     {
       "name": "SPOEX 서울국제스포츠레저산업전",
-      "url": "https://app.notion.com/p/3fb75efe5cb28185b16bcf23572b7d24"
+      "url": "https://app.notion.com/p/3fb75efe5cb28185b16bcf23572b7d24",
+      "status": "예정"
     }
   ],
   "supports": [
     {
-      "name": "특허 지원사업 (특허맵)"
+      "name": "2026 중소기업 개발생산판로 맞춤형 지원사업 (카탈로그)",
+      "status": "선정",
+      "date": "2026-10-16",
+      "url": "https://app.notion.com/p/3fb75efe5cb28105b6b7d5cfd4f54751"
+    },
+    {
+      "name": "2026 소공인 클린제조환경조성사업",
+      "status": "평가중",
+      "date": "2026-10-16",
+      "url": "https://app.notion.com/p/3fb75efe5cb28187b1f5e91a929fd431"
+    },
+    {
+      "name": "특허 지원사업 (특허맵)",
+      "status": "검토",
+      "date": "2026-10-16",
+      "url": "https://app.notion.com/p/3fb75efe5cb28140ae81f38938fe93fe"
     }
   ]
 }
