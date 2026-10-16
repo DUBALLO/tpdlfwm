@@ -39,22 +39,26 @@
           "title": "261016 자생초화 종자코팅",
           "url": "https://app.notion.com/p/3fb75efe5cb281eab841df4ea70387a0"
         }
-      ]
+      ],
+      "url": "https://app.notion.com/p/3fb75efe5cb28156bd3dff08cbcee43a"
     },
     {
       "no": 2,
       "title": "블루카본 염습지 식생매트",
-      "status": "보류"
+      "status": "보류",
+      "url": "https://app.notion.com/p/3fb75efe5cb281d8af8eec6043de78eb"
     },
     {
       "no": 3,
       "title": "야자섬유 인공 부어초",
-      "status": "보류"
+      "status": "보류",
+      "url": "https://app.notion.com/p/3fb75efe5cb281a6bbd6e52a5fd3822c"
     },
     {
       "no": 4,
       "title": "산책로 가이드 시스템 개선",
-      "status": "보류"
+      "status": "보류",
+      "url": "https://app.notion.com/p/3fb75efe5cb2811d8d61eaa6c5a33f8c"
     }
   ],
   "ideas": [
@@ -86,7 +90,8 @@
             "소싱이 아버지 인맥에 의존해 끊김. 국내 원단 생산 감소, 두올 매각"
           ]
         }
-      ]
+      ],
+      "url": "https://app.notion.com/p/3fb75efe5cb281c4bf98ec4a40331c8e"
     },
     {
       "no": 2,
@@ -113,7 +118,8 @@
             "부피 작고 단가 높은 규제 대응 하드웨어는 국내외 가격 차가 큼 (예: 누출방지 파레트)"
           ]
         }
-      ]
+      ],
+      "url": "https://app.notion.com/p/3fb75efe5cb281959bc9e3d4b24215c7"
     },
     {
       "no": 3,
@@ -127,7 +133,8 @@
             "연결 후보: 종자 피복재·식생기반재 미분말"
           ]
         }
-      ]
+      ],
+      "url": "https://app.notion.com/p/3fb75efe5cb28196a35fe2e99a77373a"
     }
   ],
   "criteria": {
@@ -155,20 +162,16 @@
         ]
       }
     ],
-    "reports": [
-      {
-        "date": "2026-10-16",
-        "title": "261016 아이템 기준과 검증 도구",
-        "url": "https://app.notion.com/p/3fb75efe5cb28123a01cc588b244bf46"
-      }
-    ]
+    "url": "https://app.notion.com/p/3fb75efe5cb28123a01cc588b244bf46"
   },
   "expos": [
     {
-      "name": "AMXPO 아시아 기계&제조산업전"
+      "name": "AMXPO 아시아 기계&제조산업전",
+      "url": "https://app.notion.com/p/3fb75efe5cb281e9be4cca2d9485560f"
     },
     {
-      "name": "SPOEX 서울국제스포츠레저산업전"
+      "name": "SPOEX 서울국제스포츠레저산업전",
+      "url": "https://app.notion.com/p/3fb75efe5cb28185b16bcf23572b7d24"
     }
   ],
   "supports": [

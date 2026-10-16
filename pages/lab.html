@@ -58,6 +58,7 @@
                 ${list.map(r => `<a href="${esc(r.url)}" target="_blank" rel="noopener" class="block text-emerald-700 hover:underline">${esc(r.title)}</a>`).join('')}
             </div>` : '';
 
+        const link = (url, text, cls = 'hover:underline') => url ? `<a href="${esc(url)}" target="_blank" rel="noopener" class="${cls}">${esc(text)}</a>` : esc(text);
         const badge = st => st === '진행'
             ? '<span class="text-xs px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 shrink-0">진행</span>'
             : `<span class="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-500 shrink-0">${esc(st)}</span>`;
@@ -84,14 +85,14 @@
                     ${active.map(t => `
                     <div class="bg-white rounded-lg shadow-sm border-t-4 border-emerald-500 p-5">
                         <div class="flex items-start justify-between gap-3">
-                            <h3 class="font-bold text-gray-900"><span class="text-gray-400 font-medium mr-1">${t.no}</span>${esc(t.title)}</h3>${badge(t.status)}
+                            <h3 class="font-bold text-gray-900"><span class="text-gray-400 font-medium mr-1">${t.no}</span>${link(t.url, t.title)}</h3>${badge(t.status)}
                         </div>
                         ${toggles(t.sections)}
                         ${reports(t.reports)}
                     </div>`).join('')}
                     <div class="bg-white rounded-lg shadow-sm border-t-4 border-gray-300 p-5">
                         ${held.map(t => `<div class="flex items-center justify-between gap-3 py-1.5">
-                            <span class="text-gray-700"><span class="text-gray-400 mr-1">${t.no}</span>${esc(t.title)}</span>${badge(t.status)}</div>`).join('')}
+                            <span class="text-gray-700"><span class="text-gray-400 mr-1">${t.no}</span>${link(t.url, t.title)}</span>${badge(t.status)}</div>`).join('')}
                     </div>
                 </div>`, `<span class="text-gray-400 font-normal text-sm">${d.tasks.length}</span>`));
 
@@ -111,7 +112,7 @@
                     </div>
                 </div>
                 <div>
-                    <h2 class="text-base font-bold text-gray-900 mb-3">${esc(c.title)} <span class="text-xs font-normal text-purple-700 bg-purple-50 px-2 py-0.5 rounded ml-1">${esc(c.note)}</span></h2>
+                    <h2 class="text-base font-bold text-gray-900 mb-3">${link(c.url, c.title)} <span class="text-xs font-normal text-purple-700 bg-purple-50 px-2 py-0.5 rounded ml-1">${esc(c.note)}</span></h2>
                     <div class="bg-white rounded-lg shadow-sm border-t-4 border-purple-400 p-5">
                         ${toggles(c.sections)}
                         ${reports(c.reports)}
